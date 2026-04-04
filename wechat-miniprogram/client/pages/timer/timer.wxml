@@ -1,0 +1,221 @@
+<view class="container bg-gradient">
+  <!-- 头部区域 -->
+  <view class="header">
+    <text class="title">定时任务管理</text>
+    <text class="ble-status {{isConnected ? 'connected' : 'disconnected'}}">
+      {{isConnected ? '已连接' : '未连接'}}
+    </text>
+  </view>
+
+  <!-- 当前时间显示 -->
+  <view class="time-card" bindtap="refreshTime">
+    <text class="time-label">设备当前时间</text>
+    <text class="time-value">{{currentTime ? currentTime : '--:--:--'}}</text>
+    <text class="time-date">{{currentDate ? currentDate : '--'}}</text>
+  </view>
+
+  <!-- 任务列表 -->
+  <view class="section">
+    <view class="section-header">
+      <text class="section-title">定时任务</text>
+      <button class="refresh-btn" bindtap="refreshTimerList" disabled="{{!isConnected}}">
+        <i class="fas fa-sync-alt"></i>
+        <text>刷新</text>
+      </button>
+    </view>
+
+    <!-- 任务列表 -->
+    <view class="timer-list">
+      <view class="timer-item {{item.enabled ? 'enabled' : 'disabled'}}" 
+            wx:for="{{timerList}}" 
+            wx:key="id"
+            bindtap="editTimer" data-item="{{item}}">
+        <view class="timer-id">
+          <text class="id-number">{{index + 1}}</text>
+        </view>
+        <view class="timer-info">
+          <view class="timer-time">
+            <text class="time">{{item.hour < 10 ? '0' + item.hour : item.hour}}:{{item.minute < 10 ? '0' + item.minute : item.minute}}</text>
+            <text class="repeat">{{item.repeat ? '重复' : '单次'}}</text>
+          </view>
+          <view class="timer-details">
+            <text>温度: {{item.temp}}°C</text>
+            <text>模式: {{modeList[item.mode]}}</text>
+            <text>风速: {{speedList[item.speed]}}</text>
+          </view>
+        </view>
+        <view class="timer-actions" catchtap="noop">
+          <switch 
+            checked="{{item.enabled}}" 
+            bindchange="toggleTimerEnable" 
+            data-id="{{item.id}}"
+          />
+          <button class="delete-btn" bindtap="deleteTimer" data-id="{{item.id}}">
+            <i class="fas fa-trash-alt"></i>
+            <text>删除</text>
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 空状态 -->
+    <view class="empty-state" wx:if="{{timerList.length === 0 && isConnected}}">
+      <i class="fas fa-clock empty-icon"></i>
+      <text class="empty-text">暂无定时任务</text>
+      <text class="empty-subtext">点击下方按钮添加定时任务</text>
+    </view>
+
+    <!-- 未连接状态 -->
+    <view class="empty-state" wx:if="{{!isConnected}}">
+      <i class="fas fa-bluetooth-b empty-icon"></i>
+      <text class="empty-text">请先连接设备</text>
+      <text class="empty-subtext">连接后可查看和管理定时任务</text>
+    </view>
+  </view>
+
+  <!-- 添加任务按钮 -->
+  <button class="add-timer-btn" bindtap="showAddModal" disabled="{{!isConnected}}">
+    <i class="fas fa-plus"></i>
+    <text>添加定时任务</text>
+  </button>
+
+  <!-- WiFi模式切换按钮 -->
+  <button class="wifi-mode-btn" bindtap="toggleWifiMode" disabled="{{!isConnected}}">
+    <i class="fas fa-wifi"></i>
+    <text>切换到WiFi模式</text>
+  </button>
+
+  <!-- 加载提示 -->
+  <view class="loading-overlay" wx:if="{{isLoading}}">
+    <view class="loading-content">
+      <view class="loading-spinner"></view>
+      <text class="loading-text">{{loadingText || '加载中...'}}</text>
+    </view>
+  </view>
+
+  <!-- 状态提示 -->
+  <view wx:if="{{statusMessage}}" class="status-toast {{statusType}}">
+    {{statusMessage}}
+  </view>
+</view>
+
+<!-- 添加/编辑任务弹窗 -->
+<view wx:if="{{showAddModal}}" class="modal-overlay" bindtap="hideAddModal">
+  <view class="modal" catchtap="noop">
+    <view class="modal-header">
+      <text>{{editingTimer ? '编辑定时任务' : '添加定时任务'}}</text>
+      <button class="close-btn" bindtap="hideAddModal">× 关闭</button>
+    </view>
+    <view class="modal-content">
+      <!-- 执行时间 -->
+      <view class="form-item">
+        <text class="label">执行时间</text>
+        <view class="time-picker">
+          <picker class="picker-item" mode="selector" range="{{hourList}}" value="{{newTimer.hour}}" bindchange="onHourChange">
+            <text class="picker-text">{{hourList[newTimer.hour]}}</text>
+          </picker>
+          <text class="time-separator">:</text>
+          <picker class="picker-item" mode="selector" range="{{minuteList}}" value="{{newTimer.minute}}" bindchange="onMinuteChange">
+            <text class="picker-text">{{minuteList[newTimer.minute]}}</text>
+          </picker>
+        </view>
+      </view>
+
+      <!-- 重复设置 -->
+      <view class="form-item">
+        <text class="label">重复设置</text>
+        <view class="toggle-container">
+          <switch checked="{{newTimer.repeat}}" bindchange="onRepeatChange" />
+          <text>{{newTimer.repeat ? '每天重复' : '仅执行一次'}}</text>
+        </view>
+      </view>
+
+      <!-- 开关状态 -->
+      <view class="form-item">
+        <text class="label">开关状态</text>
+        <radio-group bindchange="onPowerChange">
+          <view class="power-toggle">
+            <label class="power-option {{newTimer.power === 'on' ? 'active' : ''}}">
+              <radio value="on" checked="{{newTimer.power === 'on'}}" />
+              <text>开机</text>
+            </label>
+            <label class="power-option {{newTimer.power === 'off' ? 'active' : ''}}">
+              <radio value="off" checked="{{newTimer.power === 'off'}}" />
+              <text>关机</text>
+            </label>
+          </view>
+        </radio-group>
+      </view>
+
+      <!-- 温度设置 -->
+      <view class="form-item" wx:if="{{newTimer.power === 'on'}}">
+        <text class="label">温度设置</text>
+        <view class="temp-control">
+          <button class="temp-button" bindtap="decreaseTemp">−</button>
+          <text class="temp-value">{{newTimer.temp}}°C</text>
+          <button class="temp-button" bindtap="increaseTemp">+</button>
+        </view>
+      </view>
+
+      <!-- 模式选择 -->
+      <view class="form-item" wx:if="{{newTimer.power === 'on'}}">
+        <text class="label">模式选择</text>
+        <button class="mode-select-btn" bindtap="showModeSelector">
+          {{modeList[newTimer.mode]}}
+          <i class="fas fa-chevron-down"></i>
+        </button>
+      </view>
+
+      <!-- 风速选择 -->
+      <view class="form-item" wx:if="{{newTimer.power === 'on'}}">
+        <text class="label">风速选择</text>
+        <button class="speed-select-btn" bindtap="showSpeedSelector">
+          {{speedList[newTimer.speed]}}
+          <i class="fas fa-chevron-down"></i>
+        </button>
+      </view>
+
+      <!-- 操作按钮 -->
+      <view class="modal-footer">
+        <button class="cancel-btn" bindtap="hideAddModal">取消</button>
+        <button class="confirm-btn" bindtap="saveTimer">{{editingTimer ? '保存' : '添加'}}</button>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 模式选择器 -->
+<view wx:if="{{showModeSelector}}" class="selector-overlay" bindtap="hideModeSelector">
+  <view class="selector-container" catchtap="noop">
+    <view class="selector-header">
+      <text>选择模式</text>
+      <button class="close-btn" bindtap="hideModeSelector">×</button>
+    </view>
+    <view class="selector-content">
+      <view wx:for="{{modeList}}" wx:key="index" 
+            class="selector-item {{newTimer.mode === index ? 'active' : ''}}" 
+            bindtap="selectMode" data-index="{{index}}">
+        <text>{{item}}</text>
+        <i class="fas fa-check" wx:if="{{newTimer.mode === index}}"></i>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- 风速选择器 -->
+<view wx:if="{{showSpeedSelector}}" class="selector-overlay" bindtap="hideSpeedSelector">
+  <view class="selector-container" catchtap="noop">
+    <view class="selector-header">
+      <text>选择风速</text>
+      <button class="close-btn" bindtap="hideSpeedSelector">×</button>
+    </view>
+    <view class="selector-content">
+      <view wx:for="{{speedList}}" wx:key="index" 
+            class="selector-item {{newTimer.speed === index ? 'active' : ''}}" 
+            bindtap="selectSpeed" data-index="{{index}}">
+        <text>{{item}}</text>
+        <i class="fas fa-check" wx:if="{{newTimer.speed === index}}"></i>
+      </view>
+    </view>
+  </view>
+</view>

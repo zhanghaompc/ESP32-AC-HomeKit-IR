@@ -1,0 +1,232 @@
+<view class="container bg-gradient">
+  <!-- 头部区域 -->
+  <view class="header">
+    <text class="title">智能空调控制器</text>
+    <view class="header-actions">
+      <text class="ble-status {{isConnected ? 'connected' : 'disconnected'}}">
+        <i class="fas fa-bluetooth mr-2"></i>{{isConnected ? '已连接' : '未连接'}}
+      </text>
+    </view>
+  </view>
+  
+  <!-- 设备选择器（修复：WXML中不能直接调用JS函数，改用渲染好的设备名称） -->
+  <view class="device-selector" wx:if="{{deviceList.length > 1}}">
+    <view class="picker-container" bindtap="showDevicePicker">
+      <text class="picker-value">
+        {{currentDeviceName || '未知设备'}}
+      </text>
+      <i class="fas fa-chevron-down picker-icon"></i>
+    </view>
+  </view>
+  
+  <!-- 连接控制区域（移除原刷新协议按钮） -->
+  <view class="ble-control-group">
+    <button class="ble-button {{isConnected ? 'connected-btn' : ''}}" 
+            bindtap="{{isConnected ? 'disconnectBLE' : 'manualConnect'}}">
+      {{isConnected ? '断开连接' : '连接设备'}}
+    </button>
+  </view>
+  
+  <!-- 温湿度显示卡片（优化空值显示） -->
+  <view class="sensor-display">
+    <view class="sensor-item">
+      <view class="data-container">
+        <text class="icon">🌡️</text>
+        <view class="data-value animate-fadeIn">{{temp || '--'}}°C</view>
+        <view class="data-label">环境温度</view>
+      </view>
+    </view>
+    <view class="sensor-item">
+      <view class="data-container">
+        <text class="icon">💧</text>
+        <view class="data-value animate-fadeIn">{{humidity || '--'}}%</view>
+        <view class="data-label">环境湿度</view>
+      </view>
+    </view>
+  </view> 
+  
+  <!-- 空调开关按钮 -->
+  <button class="power-button {{isPowerOn ? 'power-on' : 'power-off'}}" 
+          bindtap="togglePower"
+          disabled="{{!isConnected}}">
+    <i class="fas fa-power-off button-icon {{isPowerOn ? 'icon-on' : 'icon-off'}}"></i>
+    <text>{{isPowerOn ? '空调开启' : '空调关闭'}}</text>
+  </button>
+  
+  <!-- 空调设置区域 -->
+  <view class="section-title-container">
+    <text class="section-title">空调设置</text>
+  </view>
+  
+  <!-- 设置网格 -->
+  <view class="settings-grid">
+    <!-- 协议选择区域（新增刷新图标，恢复原占位符样式） -->
+    <view class="form-group">
+      <text class="form-label">空调协议</text>
+      <!-- 协议选择+刷新图标容器 - 连接时显示 -->
+      <view class="picker-refresh-container" wx:if="{{isConnected}}">
+        <view class="picker-container" bindtap="showProtocolPicker">
+          <text class="picker-value">{{protocolList[protocolIndex] || '未选择'}}</text>
+          <i class="fas fa-chevron-down picker-icon"></i>
+        </view>
+        <!-- 刷新协议图标（循环圈）- 外层已判断连接状态，内层无需重复判断 -->
+        <i class="fas fa-sync-alt refresh-protocol-icon" 
+           bindtap="queryCurrentProtocol"
+           class="{{isLoading ? 'refreshing' : ''}}"></i>
+      </view>
+      <!-- 未连接时 - 统一为picker-container样式 -->
+      <view class="picker-container" wx:else>
+        <text class="picker-placeholder">请先连接设备</text>
+        <i class="fas fa-chevron-down picker-icon"></i>
+      </view>
+    </view>
+    
+    <!-- 运行模式选择 -->
+    <view class="form-group">
+      <text class="form-label">运行模式</text>
+      <view class="picker-container" 
+            bindtap="showModePicker"
+            wx:if="{{isConnected}}">
+        <text class="picker-value">{{modeList[modeIndex]}}</text>
+        <i class="fas fa-chevron-down picker-icon"></i>
+      </view>
+      <view class="picker-container" wx:else>
+        <text class="picker-placeholder">请先连接设备</text>
+        <i class="fas fa-chevron-down picker-icon"></i>
+      </view>
+    </view>
+    
+    <!-- 风速选择 -->
+    <view class="form-group">
+      <text class="form-label">风速</text>
+      <view class="picker-container" 
+            bindtap="showSpeedPicker"
+            wx:if="{{isConnected}}">
+        <text class="picker-value">{{speedList[speedIndex]}}</text>
+        <i class="fas fa-chevron-down picker-icon"></i>
+      </view>
+      <view class="picker-container" wx:else>
+        <text class="picker-placeholder">请先连接设备</text>
+        <i class="fas fa-chevron-down picker-icon"></i>
+      </view>
+    </view>
+    
+    <!-- 目标温度设置（关键修改：未连接样式和其他选项统一） -->
+    <view class="form-group">
+      <text class="form-label">目标温度 (°C)</text>
+      <!-- 连接时显示加减按钮 -->
+      <view class="temp-control" wx:if="{{isConnected}}">
+        <button class="temp-button" bindtap="decreaseTemp">-</button>
+        <text class="temp-value">{{targetTemp}}</text>
+        <button class="temp-button" bindtap="increaseTemp">+</button>
+      </view>
+      <!-- 未连接时 - 统一为picker-container样式（和其他选项一致） -->
+      <view class="picker-container" wx:else>
+        <text class="picker-placeholder">请先连接设备</text>
+        <i class="fas fa-chevron-down picker-icon"></i>
+      </view>
+    </view>
+  </view>
+  
+  <!-- 功能按钮（优化布局和状态） -->
+  <view class="buttons-group">
+    <button class="learning-button" 
+            bindtap="startLearningMode" 
+            disabled="{{!isConnected || isLearning}}">
+      <i class="fas fa-graduation-cap mr-1"></i>
+      <text>{{isLearning ? '学习中...' : '协议学习'}}</text>
+    </button>
+    <button class="update-button" 
+            bindtap="sendSettings" 
+            disabled="{{!isConnected}}">
+      <i class="fas fa-save mr-1"></i>
+      <text>更新设置</text>
+    </button>
+  </view>
+
+  <!-- 定时任务按钮 -->
+  <view class="timer-section">
+    <button class="timer-button" 
+            bindtap="goToTimer" 
+            disabled="{{!isConnected}}">
+      <i class="fas fa-clock mr-2"></i>
+      <text>定时任务管理</text>
+    </button>
+  </view>
+  
+  <!-- 状态显示区域（优化样式） -->
+  <view class="status-display {{!status ? 'hidden' : ''}}">
+    <text class="status-text {{statusType === 'success' ? 'success' : statusType === 'fail' ? 'fail' : 'info'}}">
+      <i class="fas {{statusType === 'success' ? 'fa-check-circle' : statusType === 'fail' ? 'fa-exclamation-circle' : 'fa-info-circle'}} mr-2"></i>
+      {{status}}
+    </text>
+  </view>
+  
+  <!-- 通用模态框（优化点击穿透问题） -->
+  <!-- 设备选择弹窗 -->
+  <view wx:if="{{showDevicePicker}}" class="modal-overlay" bindtap="hideDevicePicker">
+    <view class="modal" catchtap="noop">
+      <view class="modal-header">选择设备</view>
+      <view class="modal-options">
+        <view wx:for="{{deviceList}}" wx:key="deviceId" 
+              class="option {{deviceId === item.deviceId ? 'selected' : ''}}" 
+              bindtap="onDeviceChange" data-device-id="{{item.deviceId}}">
+          {{item.name || item.deviceId}} (信号: {{item.RSSI}})
+        </view>
+      </view>
+    </view>
+  </view>
+  
+  <!-- 协议选择器弹窗 -->
+  <view wx:if="{{showProtocolPicker}}" class="modal-overlay" bindtap="hideProtocolPicker">
+    <view class="modal" catchtap="noop">
+      <view class="modal-header">选择空调协议</view>
+      <!-- 协议列表过长，添加滚动 -->
+      <scroll-view class="modal-scroll" scroll-y>
+        <view class="modal-options">
+          <view wx:for="{{protocolList}}" wx:key="index" 
+                class="option {{protocolIndex === index ? 'selected' : ''}}" 
+                bindtap="onProtocolChange" data-index="{{index}}">
+            {{item}}
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+  
+  <!-- 模式选择器弹窗 -->
+  <view wx:if="{{showModePicker}}" class="modal-overlay" bindtap="hideModePicker">
+    <view class="modal" catchtap="noop">
+      <view class="modal-header">选择运行模式</view>
+      <view class="modal-options">
+        <view wx:for="{{modeList}}" wx:key="index" 
+              class="option {{modeIndex === index ? 'selected' : ''}}" 
+              bindtap="onModeChange" data-index="{{index}}">
+          {{item}}
+        </view>
+      </view>
+    </view>
+  </view>
+  
+  <!-- 风速选择器弹窗 -->
+  <view wx:if="{{showSpeedPicker}}" class="modal-overlay" bindtap="hideSpeedPicker">
+    <view class="modal" catchtap="noop">
+      <view class="modal-header">选择风速</view>
+      <view class="modal-options">
+        <view wx:for="{{speedList}}" wx:key="index" 
+              class="option {{speedIndex === index ? 'selected' : ''}}" 
+              bindtap="onSpeedChange" data-index="{{index}}">
+          {{item}}
+        </view>
+      </view>
+    </view>
+  </view>
+  
+  <!-- 加载遮罩 -->
+  <view wx:if="{{isLoading}}" class="loading-overlay">
+    <view class="loading-spinner">
+      <i class="fas fa-circle-notch fa-spin loading-icon"></i>
+      <text class="loading-text">{{loadingText}}</text>
+    </view>
+  </view>
+</view>

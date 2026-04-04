@@ -1,0 +1,85 @@
+{
+  "miniVersion": "v2",
+  "name": "%name%",
+  "version": "0.0.1",
+  "versionCode": 100,
+  "i18nFilePath": "i18n",
+  "mini-android": {
+    "resourcePath": "miniapp/android/nativeResources",
+    "sdkVersion": "1.6.15",
+    "toolkitVersion": "0.11.0",
+    "useExtendedSdk": {
+      "media": false,
+      "bluetooth": false,
+      "network": false,
+      "scanner": false,
+      "xweb": false
+    },
+    "icons": {
+      "hdpi": "",
+      "xhdpi": "",
+      "xxhdpi": "",
+      "xxxhdpi": ""
+    },
+    "splashscreen": {
+      "hdpi": "",
+      "xhdpi": "",
+      "xxhdpi": ""
+    },
+    "enableVConsole": "open",
+    "privacy": {
+      "enable": true
+    }
+  },
+  "mini-ios": {
+    "sdkVersion": "1.6.17",
+    "toolkitVersion": "0.0.9",
+    "useExtendedSdk": {
+      "WeAppOpenFuns": true,
+      "WeAppNetwork": false,
+      "WeAppBluetooth": false,
+      "WeAppMedia": false,
+      "WeAppLBS": false,
+      "WeAppOthers": false
+    },
+    "enableVConsole": "open",
+    "icons": {
+      "mainIcon120": "",
+      "mainIcon180": "",
+      "spotlightIcon80": "",
+      "spotlightIcon120": "",
+      "settingsIcon58": "",
+      "settingsIcon87": "",
+      "notificationIcon40": "",
+      "notificationIcon60": "",
+      "appStore1024": ""
+    },
+    "splashScreen": {
+      "customImage": ""
+    },
+    "privacy": {
+      "enable": false
+    },
+    "enableOpenUrlNavigate": true,
+    "buildCloud": {
+      "useRemote": true
+    },
+    "privateDescriptions": {
+      "NSPhotoLibraryUsageDescription": "当前应用程序需要访问用户的相册，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSCameraUsageDescription": "当前应用程序需要访问用户的相机，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSMicrophoneUsageDescription": "当前应用程序需要访问用户的麦克风，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSLocationWhenInUseUsageDescription": "当前应用程序需要在使用时访问用户的位置，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSLocationAlwaysUsageDescription": "当前应用程序需要始终访问用户的位置，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSLocationAlwaysAndWhenInUseUsageDescription": "当前应用程序需要始终和在使用时访问用户的位置，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSContactsUsageDescription": "当前应用程序需要访问用户的联系人，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSCalendarsUsageDescription": "当前应用程序需要访问用户的日历，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSRemindersUsageDescription": "当前应用程序需要访问用户的提醒事项，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSBluetoothPeripheralUsageDescription": "当前应用程序需要访问用户的蓝牙，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSBluetoothAlwaysUsageDescription": "当前应用程序需要始终访问用户的蓝牙，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSSpeechRecognitionUsageDescription": "当前应用程序需要使用语音识别，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSLocalNetworkUsageDescription": "当前应用程序需要访问本地网络，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSSystemAdministrationUsageDescription": "当前应用程序需要进行系统管理操作，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可」",
+      "NSPhotoLibraryAddUsageDescription": "应用程序在请求访问照片库，如需修改描述请前往「project.miniapp.json - 隐私信息访问许可描述」修改，并且关闭「自动使用默认描述补全默认隐私信息访问许可"
+    }
+  }
+}
