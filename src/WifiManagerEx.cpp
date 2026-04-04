@@ -1,0 +1,207 @@
+#include "WifiManagerEx.h"
+#include "LedManager.h"
+#include <Arduino.h>
+#include <FastLED.h>
+#include <SPIFFS.h>
+#include <WiFiManager.h>
+#include <IRremoteESP8266.h>
+#include <IRac.h>
+
+extern float envTemperature;
+extern float enHumidity;
+extern String lastProtocolName;
+extern LedManager ledManager;
+void AC_SET_DATA(int temp, int speed, int mode, bool power = true);
+bool updateProtocolFromString(const String &, decode_type_t &);
+extern IRac ac;
+
+WifiManagerEx::WifiManagerEx() : server(8080) {}
+
+void WifiManagerEx::begin()
+{
+}
+
+void WifiManagerEx::enable()
+{
+    connectWiFi();
+    startWebServer();
+}
+
+void WifiManagerEx::disable()
+{
+    disconnectWiFi();
+    stopWebServer();
+}
+
+void WifiManagerEx::loop()
+{
+    if (webServerActive)
+    {
+        server.handleClient();
+    }
+    checkWiFiConnection();
+}
+
+bool WifiManagerEx::isConnected() const
+{
+    return wifiConnected;
+}
+
+void WifiManagerEx::connectWiFi()
+{
+    WiFi.mode(WIFI_STA);
+    WiFi.begin();
+    Serial.println("正在连接WiFi...");
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 5000)
+    {
+        delay(200);
+        Serial.print(".");
+    }
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("\nWiFi自动连接失败，启动配置门户");
+        ledManager.blinkGreen();
+        startConfigPortal();
+    }
+    else
+    {
+        wifiConnected = true;
+        ledManager.off();
+        Serial.printf("\nWiFi连接成功！IP: %s\n", WiFi.localIP().toString().c_str());
+    }
+}
+
+void WifiManagerEx::disconnectWiFi()
+{
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    wifiConnected = false;
+    Serial.println("WiFi已关闭");
+}
+
+void WifiManagerEx::checkWiFiConnection()
+{
+    static bool wasConnected = false;
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        if (wasConnected)
+        {
+            wasConnected = false;
+            wifiConnected = false;
+            Serial.println("WiFi已断开，开始闪绿灯...");
+            ledManager.blinkGreen();
+        }
+
+        if (millis() - lastAttemptTime >= retryInterval)
+        {
+            Serial.println("尝试重连...");
+            WiFi.reconnect();
+            lastAttemptTime = millis();
+        }
+    }
+    else
+    {
+        if (!wasConnected)
+        {
+            wasConnected = true;
+            wifiConnected = true;
+            ledManager.off();
+            Serial.printf("WiFi已连接！IP: %s\n", WiFi.localIP().toString().c_str());
+        }
+    }
+}
+
+void WifiManagerEx::startConfigPortal()
+{
+    WiFiManager wifiManager;
+    wifiManager.setTitle("永远相信美好的事物即将发生");
+    wifiManager.setTimeout(60);
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        if (!wifiManager.autoConnect("WIFI配置"))
+        {
+            Serial.println("WiFi连接失败，开启配置门户...");
+            wifiManager.startConfigPortal("WIFI配置");
+        }
+    }
+}
+
+void WifiManagerEx::startWebServer()
+{
+    setupWebHandlers();
+    server.begin();
+    webServerActive = true;
+    Serial.println("WebServer已启动");
+}
+
+void WifiManagerEx::stopWebServer()
+{
+    server.stop();
+    webServerActive = false;
+    Serial.println("WebServer已关闭");
+}
+
+void WifiManagerEx::setupWebHandlers()
+{
+    server.on("/", HTTP_GET, [this]()
+              {
+        File file = SPIFFS.open("/index.html", "r");
+        if (!file) {
+            server.send(404, "text/plain", "文件未找到");
+            return;
+        }
+        String html = file.readString();
+        file.close();
+        server.send(200, "text/html", html); });
+
+    server.on("/set", HTTP_GET, [this]()
+              {
+        String temp = server.arg("temp");
+        String mode = server.arg("mode");
+        String speed = server.arg("speed");
+        String protocol = server.arg("protocol");
+        int temperature = temp.toInt();
+        int modeValue = mode.toInt();
+        int speedValue = speed.toInt();
+        if (!protocol.isEmpty()) {
+            updateProtocolFromString(protocol, ac.next.protocol);
+        }
+        AC_SET_DATA(temperature, speedValue, modeValue);
+        String response = "温度=" + temp + "°C, 模式=" + mode + ", 风速=" + speed;
+        if (!protocol.isEmpty()) response += ", 协议=" + protocol;
+        server.send(200, "text/plain", response); });
+
+    server.on("/protocol", HTTP_GET, [this]()
+              { server.send(200, "text/plain", lastProtocolName); });
+
+    server.on("/sensor", HTTP_GET, [this]()
+              {
+        if (isnan(envTemperature) || isnan(enHumidity)) {
+            server.send(500, "application/json", "{\"error\":\"传感器读取失败\"}");
+            return;
+        }
+        String json = "{\"temp\":" + String(envTemperature, 1) + ",\"humidity\":" + String(enHumidity, 1) + "}";
+        server.send(200, "application/json", json); });
+
+    server.on("/power", HTTP_GET, [this]()
+              {
+        static bool powerState = false;
+        powerState = !powerState;
+        if (powerState) {
+            AC_SET_DATA(26, 3, 1);
+            server.send(200, "text/plain", "空调已开启");
+        } else {
+            ac.next.power = false;
+            ac.sendAc();
+            server.send(200, "text/plain", "空调已关闭");
+        } });
+}
+
+void WifiManagerEx::handleWiFiEvent()
+{
+}

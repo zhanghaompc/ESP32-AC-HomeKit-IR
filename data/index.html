@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能空调控制器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <style>
+        .pulse {
+            animation: pulse 0.5s;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .learning-mode {
+            animation: learning 2s infinite;
+        }
+        @keyframes learning {
+            0% { background-color: rgba(255, 193, 7, 0.5); }
+            50% { background-color: rgba(255, 193, 7, 1); }
+            100% { background-color: rgba(255, 193, 7, 0.5); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-r from-gray-200 to-blue-200 min-h-screen flex items-center justify-center p-6">
+    <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
+        <h1 class="text-2xl font-bold text-blue-600 mb-6">智能空调控制器</h1>
+        <!-- 温湿度显示区域 -->
+        <div class="flex justify-between bg-gradient-to-r from-cyan-100 to-teal-100 p-4 rounded-xl shadow-md mb-6">
+            <div class="flex flex-col items-center">
+                <i class="fa-solid fa-temperature-high text-2xl text-teal-600 mb-2"></i>
+                <div id="temperature-value" class="text-2xl font-bold text-teal-700 mb-1">--°C</div>
+                <div class="text-sm text-teal-600">环境温度</div>
+            </div>
+            <div class="flex flex-col items-center">
+                <i class="fa-solid fa-droplet text-2xl text-teal-600 mb-2"></i>
+                <div id="humidity-value" class="text-2xl font-bold text-teal-700 mb-1">--%</div>
+                <div class="text-sm text-teal-600">环境湿度</div>
+            </div>
+        </div>
+        <!-- 空调开关按钮 -->
+        <div class="mb-6">
+            <button id="power-button" class="bg-gray-800 text-white py-3 px-6 rounded-xl w-full font-bold shadow-md hover:scale-105 transition-transform" onclick="togglePower()">
+                <i class="fa-solid fa-power-off"></i> 空调关闭
+            </button>
+        </div>
+        <!-- 协议选择区域 -->
+        <div class="mb-6 text-left">
+            <label for="protocol" class="block text-gray-600 font-medium mb-2">选择空调协议</label>
+            <select id="protocol" class="w-full py-3 px-4 border border-gray-300 rounded-xl focus:border-blue-500 focus:ring-blue-500 focus:ring-1 outline-none">
+                <!-- 协议选项将通过JavaScript动态生成，默认选择COOLIX -->
+            </select>
+        </div>
+        <!-- 配对学习模式按钮 -->
+        <div class="mb-6">
+            <button id="learn-protocol" class="bg-yellow-500 text-white py-3 px-6 rounded-xl w-full font-bold shadow-md hover:scale-105 transition-transform" onclick="startLearningMode()">
+                <i class="fa-solid fa-robot"></i> 开始学习协议
+            </button>
+        </div>
+        <!-- 目标温度设置 -->
+        <div class="mb-6 text-left">
+            <label for="temperature" class="block text-gray-600 font-medium mb-2">目标温度 (°C)</label>
+            <input type="number" id="temperature" value="26" min="17" max="30" step="1" 
+                   oninput="validateTemperature(this)" onblur="finalValidateTemperature(this)"
+                   class="w-full py-3 px-4 border border-gray-300 rounded-xl focus:border-blue-500 focus:ring-blue-500 focus:ring-1 outline-none">
+        </div>
+        <!-- 运行模式选择 -->
+        <div class="mb-6 text-left">
+            <label for="mode" class="block text-gray-600 font-medium mb-2">运行模式</label>
+            <select id="mode" class="w-full py-3 px-4 border border-gray-300 rounded-xl focus:border-blue-500 focus:ring-blue-500 focus:ring-1 outline-none">
+                <option value="1">制冷</option>
+                <option value="2">制热</option>
+                <option value="0">自动</option>
+                <option value="3">除湿</option>
+                <option value="4">送风</option>
+            </select>
+        </div>
+        <!-- 风速选择 -->
+        <div class="mb-6 text-left">
+            <label for="speed" class="block text-gray-600 font-medium mb-2">风速</label>
+            <select id="speed" class="w-full py-3 px-4 border border-gray-300 rounded-xl focus:border-blue-500 focus:ring-blue-500 focus:ring-1 outline-none">
+                <option value="0">自动</option>
+                <option value="1">最小</option>
+                <option value="2">低速</option>
+                <option value="3">中速</option>
+                <option value="4">高速</option>
+                <option value="5">最大</option>  
+            </select>
+        </div>
+        <!-- 更新设置按钮 -->
+        <button class="bg-gradient-to-r from-blue-500 to-cyan-500 text-white py-3 px-6 rounded-xl w-full font-bold shadow-md hover:scale-105 transition-transform" onclick="sendData()">
+            更新设置
+        </button>
+        <!-- 学习状态显示区域 -->
+        <div id="learning-status" class="mt-6 p-4 rounded-xl hidden bg-yellow-100 text-yellow-700"></div>
+        <!-- 状态显示区域 -->
+        <div id="status" class="mt-6 p-4 rounded-xl hidden"></div>
+    </div>
+    <script>
+        // 存储当前数据用于比较
+        let currentData = {
+            temp: "--",
+            humidity: "--",
+            protocol: "COOLIX" // 默认协议
+        };
+        let isPowerOn = false;
+        let isLearningMode = false;
+        let learningTimeout;
+        const protocolMap = {
+            "UNKNOWN": "UNKNOWN",
+            "UNUSED": "UNUSED",
+            "RC5": "RC5",
+            "RC6": "RC6",
+            "NEC": "NEC",
+            "SONY": "SONY",
+            "PANASONIC": "PANASONIC",
+            "JVC": "JVC",
+            "SAMSUNG": "SAMSUNG",
+            "WHYNTER": "WHYNTER",
+            "AIWA_RC_T501": "AIWA_RC_T501",
+            "LG": "LG",
+            "SANYO": "SANYO",
+            "MITSUBISHI": "MITSUBISHI",
+            "DISH": "DISH",
+            "SHARP": "SHARP",
+            "COOLIX": "COOLIX",
+            "DAIKIN": "DAIKIN",
+            "DENON": "DENON",
+            "KELVINATOR": "KELVINATOR",
+            "SHERWOOD": "SHERWOOD",
+            "MITSUBISHI_AC": "MITSUBISHI_AC",
+            "RCMM": "RCMM",
+            "SANYO_LC7461": "SANYO_LC7461",
+            "RC5X": "RC5X",
+            "GREE": "GREE",
+            "PRONTO": "PRONTO",
+            "NEC_LIKE": "NEC_LIKE",
+            "ARGO": "ARGO",
+            "TROTEC": "TROTEC",
+            "NIKAI": "NIKAI",
+            "RAW": "RAW",
+            "GLOBALCACHE": "GLOBALCACHE",
+            "TOSHIBA_AC": "TOSHIBA_AC",
+            "FUJITSU_AC": "FUJITSU_AC",
+            "MIDEA": "MIDEA",
+            "MAGIQUEST": "MAGIQUEST",
+            "LASERTAG": "LASERTAG",
+            "CARRIER_AC": "CARRIER_AC",
+            "HAIER_AC": "HAIER_AC",
+            "MITSUBISHI2": "MITSUBISHI2",
+            "HITACHI_AC": "HITACHI_AC",
+            "HITACHI_AC1": "HITACHI_AC1",
+            "HITACHI_AC2": "HITACHI_AC2",
+            "GICABLE": "GICABLE",
+            "HAIER_AC_YRW02": "HAIER_AC_YRW02",
+            "WHIRLPOOL_AC": "WHIRLPOOL_AC",
+            "SAMSUNG_AC": "SAMSUNG_AC",
+            "LUTRON": "LUTRON",
+            "ELECTRA_AC": "ELECTRA_AC",
+            "PANASONIC_AC": "PANASONIC_AC",
+            "PIONEER": "PIONEER",
+            "LG2": "LG2",
+            "MWM": "MWM",
+            "DAIKIN2": "DAIKIN2",
+            "VESTEL_AC": "VESTEL_AC",
+            "TECO": "TECO",
+            "SAMSUNG36": "SAMSUNG36",
+            "TCL112AC": "TCL112AC",
+            "LEGOPF": "LEGOPF",
+            "MITSUBISHI_HEAVY_88": "MITSUBISHI_HEAVY_88",
+            "MITSUBISHI_HEAVY_152": "MITSUBISHI_HEAVY_152",
+            "DAIKIN216": "DAIKIN216",
+            "SHARP_AC": "SHARP_AC",
+            "GOODWEATHER": "GOODWEATHER",
+            "INAX": "INAX",
+            "DAIKIN160": "DAIKIN160",
+            "NEOCLIMA": "NEOCLIMA",
+            "DAIKIN176": "DAIKIN176",
+            "DAIKIN128": "DAIKIN128",
+            "AMCOR": "AMCOR",
+            "DAIKIN152": "DAIKIN152",
+            "MITSUBISHI136": "MITSUBISHI136",
+            "MITSUBISHI112": "MITSUBISHI112",
+            "HITACHI_AC424": "HITACHI_AC424",
+            "SONY_38K": "SONY_38K",
+            "EPSON": "EPSON",
+            "SYMPHONY": "SYMPHONY",
+            "HITACHI_AC3": "HITACHI_AC3",
+            "DAIKIN64": "DAIKIN64",
+            "AIRWELL": "AIRWELL",
+            "DELONGHI_AC": "DELONGHI_AC",
+            "DOSHISHA": "DOSHISHA",
+            "MULTIBRACKETS": "MULTIBRACKETS",
+            "CARRIER_AC40": "CARRIER_AC40",
+            "CARRIER_AC64": "CARRIER_AC64",
+            "HITACHI_AC344": "HITACHI_AC344",
+            "CORONA_AC": "CORONA_AC",
+            "MIDEA24": "MIDEA24",
+            "ZEPEAL": "ZEPEAL",
+            "SANYO_AC": "SANYO_AC",
+            "VOLTAS": "VOLTAS",
+            "METZ": "METZ",
+            "TRANSCOLD": "TRANSCOLD",
+            "TECHNIBEL_AC": "TECHNIBEL_AC",
+            "MIRAGE": "MIRAGE",
+            "ELITESCREENS": "ELITESCREENS",
+            "PANASONIC_AC32": "PANASONIC_AC32",
+            "MILESTAG2": "MILESTAG2",
+            "ECOCLIM": "ECOCLIM",
+            "XMP": "XMP",
+            "TRUMA": "TRUMA",
+            "HAIER_AC176": "HAIER_AC176",
+            "TEKNOPOINT": "TEKNOPOINT",
+            "KELON": "KELON",
+            "TROTEC_3550": "TROTEC_3550",
+            "SANYO_AC88": "SANYO_AC88",
+            "BOSE": "BOSE",
+            "ARRIS": "ARRIS",
+            "RHOSS": "RHOSS",
+            "AIRTON": "AIRTON",
+            "COOLIX48": "COOLIX48",
+            "HITACHI_AC264": "HITACHI_AC264",
+            "KELON168": "KELON168",
+            "HITACHI_AC296": "HITACHI_AC296",
+            "DAIKIN200": "DAIKIN200",
+            "HAIER_AC160": "HAIER_AC160",
+            "CARRIER_AC128": "CARRIER_AC128",
+            "TOTO": "TOTO",
+            "CLIMABUTLER": "CLIMABUTLER",
+            "TCL96AC": "TCL96AC",
+            "BOSCH144": "BOSCH144",
+            "SANYO_AC152": "SANYO_AC152",
+            "DAIKIN312": "DAIKIN312",
+            "GORENJE": "GORENJE",
+            "WOWWEE": "WOWWEE",
+            "CARRIER_AC84": "CARRIER_AC84",
+            "YORK": "YORK"
+        };
+
+        // 页面加载时开始自动更新
+        document.addEventListener('DOMContentLoaded', function() {
+            // 生成协议选择下拉菜单
+            generateProtocolSelect();
+            fetchSensorData(); // 立即获取一次数据
+            setInterval(fetchSensorData, 3000); // 每2秒自动更新
+        });
+
+        // 生成协议选择下拉菜单
+        function generateProtocolSelect() {
+            const protocolSelect = document.getElementById('protocol');
+            for (const [key, value] of Object.entries(protocolMap)) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = key;
+                protocolSelect.appendChild(option);
+                
+                // 设置默认选中COOLIX
+                if (key === "COOLIX") {
+                    option.selected = true;
+                }
+            }
+        }
+
+        // 获取温湿度数据
+        function fetchSensorData() {
+            fetch('/sensor')
+               .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取数据失败');
+                    }
+                    return response.json();
+                })
+               .then(data => {
+                    updateDisplay(data);
+                })
+               .catch(error => {
+                    console.error('获取传感器数据错误:', error);
+                });
+        }
+
+        // 更新显示的函数
+        function updateDisplay(data) {
+            const tempElement = document.getElementById('temperature-value');
+            const humidityElement = document.getElementById('humidity-value');
+
+            // 只有数据变化时才更新DOM
+            if (data.temp != currentData.temp) {
+                tempElement.textContent = data.temp + '°C';
+                tempElement.classList.add('pulse');
+                setTimeout(() => tempElement.classList.remove('pulse'), 500);
+                currentData.temp = data.temp;
+            }
+
+            if (data.humidity != currentData.humidity) {
+                humidityElement.textContent = data.humidity + '%';
+                humidityElement.classList.add('pulse');
+                setTimeout(() => humidityElement.classList.remove('pulse'), 500);
+                currentData.humidity = data.humidity;
+            }
+        }
+
+        function showStatus(message, isSuccess) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'mt-6 p-4 rounded-xl ' + (isSuccess ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700');
+            status.style.display = 'block';
+
+            setTimeout(() => {
+                status.style.opacity = '0';
+                setTimeout(() => {
+                    status.style.display = 'none';
+                    status.style.opacity = '1';
+                }, 500);
+            }, 3000);
+        }
+
+        function showLearningStatus(message) {
+            const learningStatus = document.getElementById('learning-status');
+            learningStatus.textContent = message;
+            learningStatus.style.display = 'block';
+        }
+
+        function hideLearningStatus() {
+            const learningStatus = document.getElementById('learning-status');
+            learningStatus.style.display = 'none';
+        }
+
+        function validateTemperature(input) {
+            const value = parseInt(input.value);
+            if (isNaN(value) || value < 17 || value > 30) {
+                input.classList.add('border-red-500');
+                return false;
+            }
+            input.classList.remove('border-red-500');
+            return true;
+        }
+
+        function finalValidateTemperature(input) {
+            let value = parseInt(input.value);
+            if (isNaN(value)) {
+                input.value = 26;
+            } else if (value < 17) {
+                input.value = 17;
+            } else if (value > 30) {
+                input.value = 30;
+            }
+            input.classList.remove('border-red-500');
+        }
+
+        let isRequestPending = false;  // 防止重复发送请求
+
+        function togglePower() {
+            if (isRequestPending) return;  // 防止多次点击发起重复请求
+            isRequestPending = true;
+            
+            const powerButton = document.getElementById('power-button');
+            
+            // 先将按钮设置为加载状态，防止重复点击
+            powerButton.disabled = true;  // 禁用按钮，直到请求完成
+
+            // 调用后端接口来控制空调
+            fetch('/power')  // 请求你的服务器，控制空调开关
+                .then(response => response.text())
+                .then(message => {
+                    // 根据后端的响应更新按钮状态和文本
+                    if (message === "空调已开启") {
+                        powerButton.classList.remove('bg-gray-800');
+                        powerButton.classList.add('bg-green-500');
+                        powerButton.innerHTML = '<i class="fa-solid fa-power-off"></i> 空调开启';
+                        isPowerOn = true;
+                    } else if (message === "空调已关闭") {
+                        powerButton.classList.remove('bg-green-500');
+                        powerButton.classList.add('bg-gray-800');
+                        powerButton.innerHTML = '<i class="fa-solid fa-power-off"></i> 空调关闭';
+                        isPowerOn = false;
+                    }
+
+                    // 显示操作状态
+                    showStatus(message, true);
+                    isRequestPending = false;  // 允许再次点击
+                    powerButton.disabled = false;  // 启用按钮
+                })
+                .catch(error => {
+                    showStatus('操作失败: ' + error, false);
+                    isRequestPending = false;
+                    powerButton.disabled = false;
+                });
+        }
+
+        // 开始学习协议模式
+        function startLearningMode() {
+            if (isLearningMode) return;
+            
+            isLearningMode = true;
+            const learnButton = document.getElementById('learn-protocol');
+            const status = document.getElementById('status');
+            
+            // 禁用按钮并显示学习状态
+            learnButton.disabled = true;
+            learnButton.classList.add('learning-mode');
+            learnButton.innerHTML = '<i class="fa-spinner fa-spin"></i> 正在学习协议...';
+            showLearningStatus('请在10秒内按下空调遥控器任意按钮...');
+            
+            // 调用后端API开始学习
+            fetch('/learn', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('学习协议失败');
+                }
+                return response.text();
+            })
+            .then(result => {
+                // 处理学习结果
+                if (result.startsWith('协议学习成功')) {
+                    const protocol = result.split(': ')[1];
+                    currentData.protocol = protocol;
+                    
+                    // 更新协议选择框的选中状态
+                    const protocolSelect = document.getElementById('protocol');
+                    for (let i = 0; i < protocolSelect.options.length; i++) {
+                        if (protocolSelect.options[i].value === protocol) {
+                            protocolSelect.options[i].selected = true;
+                            break;
+                        }
+                    }
+                    
+                    showStatus(result, true);
+                } else {
+                    showStatus(result, false);
+                }
+            })
+            .catch(error => {
+                showStatus('学习协议过程中出错: ' + error, false);
+            })
+            .finally(() => {
+                // 重置学习模式
+                endLearningMode();
+            });
+            
+            // 设置学习超时
+            learningTimeout = setTimeout(() => {
+                endLearningMode();
+                showStatus('学习超时，未接收到有效信号', false);
+            }, 10000); // 10秒超时
+        }
+
+        // 结束学习模式
+        function endLearningMode() {
+            isLearningMode = false;
+            clearTimeout(learningTimeout);
+            
+            const learnButton = document.getElementById('learn-protocol');
+            learnButton.disabled = false;
+            learnButton.classList.remove('learning-mode');
+            learnButton.innerHTML = '<i class="fa-solid fa-robot"></i> 开始学习协议';
+            hideLearningStatus();
+        }
+
+        function sendData() {
+            const tempInput = document.getElementById('temperature');
+            const mode = document.getElementById('mode').value;
+            const speed = document.getElementById('speed').value;
+            const protocol = document.getElementById('protocol').value;
+
+            // 最终验证温度值
+            finalValidateTemperature(tempInput);
+            const temp = tempInput.value;
+
+            if (!validateTemperature(tempInput)) {
+                showStatus('温度必须在17 - 30℃之间', false);
+                return;
+            }
+
+            // 构建请求URL，包含协议参数
+            let url = '/set?temp=' + temp + '&mode=' + mode + '&speed=' + speed;
+            if (protocol) {
+                url += '&protocol=' + protocol;
+            }
+
+            fetch(url)
+               .then(response => response.text())
+               .then(message => showStatus('设置成功: ' + message, true))
+               .catch(error => showStatus('设置失败: ' + error, false));
+        }
+    </script>
+</body>
+</html>
