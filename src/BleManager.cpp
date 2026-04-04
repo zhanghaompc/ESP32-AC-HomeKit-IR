@@ -8,6 +8,7 @@
 
 extern float envTemperature;
 extern float enHumidity;
+extern String lastProtocolName;
 extern LedManager ledManager;
 extern IrManager irManager;
 bool updateProtocolFromString(const String &, decode_type_t &);
@@ -28,6 +29,7 @@ public:
         ledManager.stopBlink();
         ledManager.setColor(CRGB::Blue);
         parent->sendTempHumidity(envTemperature, enHumidity);
+        parent->sendProtocol(lastProtocolName);
     }
     void onDisconnect(BLEServer *pServer) override
     {
@@ -156,6 +158,19 @@ void BleManager::sendTempHumidity(float temp, float humidity)
     giveMutex();
 }
 
+void BleManager::sendProtocol(const String &protocol)
+{
+    if (!deviceConnected || !pTxCharacteristic)
+        return;
+
+    if (!takeMutex())
+        return;
+    String data = "protocol=" + protocol;
+    pTxCharacteristic->setValue(data.c_str());
+    pTxCharacteristic->notify();
+    giveMutex();
+}
+
 void BleManager::startAdvertising()
 {
     BLEAdvertising *adv = BLEDevice::getAdvertising();
@@ -256,7 +271,17 @@ void BleManager::handleCommand(const String &command)
     // 查询状态
     if (command == "status")
     {
-        String s = "temp=" + String(envTemperature, 1) + ";humidity=" + String(enHumidity, 1) + ";power=" + String(ac.next.power ? "on" : "off");
+        String s = "temp=" + String(envTemperature, 1) + ";humidity=" + String(enHumidity, 1) + ";power=" + String(ac.next.power ? "on" : "off") + ";protocol=" + lastProtocolName;
+        pTxCharacteristic->setValue(s.c_str());
+        pTxCharacteristic->notify();
+        giveMutex();
+        return;
+    }
+
+    // 获取当前协议
+    if (command == "get_protocol")
+    {
+        String s = "protocol=" + lastProtocolName;
         pTxCharacteristic->setValue(s.c_str());
         pTxCharacteristic->notify();
         giveMutex();

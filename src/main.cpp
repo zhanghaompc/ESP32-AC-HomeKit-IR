@@ -226,6 +226,42 @@ decode_type_t getProtocolEnumFromString(const String &proto)
   }
 }
 
+void saveProtocolToSPIFFS(const String &protocolName)
+{
+  File file = SPIFFS.open("/protocol.txt", "w");
+  if (file)
+  {
+    file.println(protocolName);
+    file.close();
+    Serial.println("协议已保存到SPIFFS: " + protocolName);
+  }
+  else
+  {
+    Serial.println("保存协议失败");
+  }
+}
+
+String loadProtocolFromSPIFFS()
+{
+  if (!SPIFFS.exists("/protocol.txt"))
+  {
+    Serial.println("未找到保存的协议，使用默认协议");
+    return "KELVINATOR";
+  }
+
+  File file = SPIFFS.open("/protocol.txt", "r");
+  if (file)
+  {
+    String protocol = file.readStringUntil('\n');
+    protocol.trim();
+    file.close();
+    Serial.println("从SPIFFS读取协议: " + protocol);
+    return protocol;
+  }
+  Serial.println("读取协议失败，使用默认协议");
+  return "KELVINATOR";
+}
+
 bool updateProtocolFromString(const String &protocolName, decode_type_t &targetProtocol)
 {
   decode_type_t protoEnum = getProtocolEnumFromString(protocolName);
@@ -233,6 +269,7 @@ bool updateProtocolFromString(const String &protocolName, decode_type_t &targetP
   {
     targetProtocol = protoEnum;
     lastProtocolName = protocolName;
+    saveProtocolToSPIFFS(protocolName);
     Serial.println("更新协议为：" + protocolName);
     return true;
   }
@@ -668,8 +705,6 @@ void IRrecvDump(void)
   }
 }
 
-
-
 // 红外发射参数设置（保持不变）
 void AC_SET_DATA(int temp, int speed, int mode, bool power)
 {
@@ -703,6 +738,9 @@ void setup()
   {
     Serial.println("SPIFFS初始化失败");
   }
+
+  // 从SPIFFS读取保存的协议
+  lastProtocolName = loadProtocolFromSPIFFS();
 
   // 初始化空调状态
   updateProtocolFromString(lastProtocolName, ac.next.protocol);
