@@ -51,7 +51,8 @@ void WifiManagerEx::connectWiFi()
 {
     WiFi.mode(WIFI_STA);
     WiFi.begin();
-    Serial.println("ÕıÔÚÁ¬½ÓWiFi...");
+    Serial.println("æ­£åœ¨è¿æ¥WiFi...");
+    ledManager.blinkGreen();
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < 5000)
@@ -62,15 +63,17 @@ void WifiManagerEx::connectWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("\nWiFi×Ô¶¯Á¬½ÓÊ§°Ü£¬Æô¶¯ÅäÖÃÃÅ»§");
-        ledManager.blinkGreen();
+        Serial.println("\nWiFiè‡ªåŠ¨è¿æ¥å¤±è´¥ï¼Œå¯åŠ¨é…ç½®é—¨æˆ·");
         startConfigPortal();
     }
     else
     {
         wifiConnected = true;
+        ledManager.stopBlink();
+        ledManager.setColor(CRGB::Green);
+        delay(500);
         ledManager.off();
-        Serial.printf("\nWiFiÁ¬½Ó³É¹¦£¡IP: %s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("\nWiFiè¿æ¥æˆåŠŸï¼IP: %s:8080\n", WiFi.localIP().toString().c_str());
     }
 }
 
@@ -79,7 +82,7 @@ void WifiManagerEx::disconnectWiFi()
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     wifiConnected = false;
-    Serial.println("WiFiÒÑ¹Ø±Õ");
+    Serial.println("WiFiå·²å…³é—­");
 }
 
 void WifiManagerEx::checkWiFiConnection()
@@ -92,13 +95,13 @@ void WifiManagerEx::checkWiFiConnection()
         {
             wasConnected = false;
             wifiConnected = false;
-            Serial.println("WiFiÒÑ¶Ï¿ª£¬¿ªÊ¼ÉÁÂÌµÆ...");
+            Serial.println("WiFiå·²æ–­å¼€ï¼Œå¼€å§‹é—ªç»¿ç¯...");
             ledManager.blinkGreen();
         }
 
         if (millis() - lastAttemptTime >= retryInterval)
         {
-            Serial.println("³¢ÊÔÖØÁ¬...");
+            Serial.println("å°è¯•é‡è¿...");
             WiFi.reconnect();
             lastAttemptTime = millis();
         }
@@ -109,8 +112,11 @@ void WifiManagerEx::checkWiFiConnection()
         {
             wasConnected = true;
             wifiConnected = true;
+            ledManager.stopBlink();
+            ledManager.setColor(CRGB::Green);
+            delay(500);
             ledManager.off();
-            Serial.printf("WiFiÒÑÁ¬½Ó£¡IP: %s\n", WiFi.localIP().toString().c_str());
+            Serial.printf("WiFiå·²è¿æ¥ï¼IP: %s:8080\n", WiFi.localIP().toString().c_str());
         }
     }
 }
@@ -118,15 +124,15 @@ void WifiManagerEx::checkWiFiConnection()
 void WifiManagerEx::startConfigPortal()
 {
     WiFiManager wifiManager;
-    wifiManager.setTitle("ÓÀÔ¶ÏàĞÅÃÀºÃµÄÊÂÎï¼´½«·¢Éú");
+    wifiManager.setTitle("æ°¸è¿œç›¸ä¿¡ç¾å¥½çš„äº‹ç‰©å³å°†å‘ç”Ÿ");
     wifiManager.setTimeout(60);
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        if (!wifiManager.autoConnect("WIFIÅäÖÃ"))
+        if (!wifiManager.autoConnect("WIFIé…ç½®"))
         {
-            Serial.println("WiFiÁ¬½ÓÊ§°Ü£¬¿ªÆôÅäÖÃÃÅ»§...");
-            wifiManager.startConfigPortal("WIFIÅäÖÃ");
+            Serial.println("WiFiè¿æ¥å¤±è´¥ï¼Œå¼€å¯é…ç½®é—¨æˆ·...");
+            wifiManager.startConfigPortal("WIFIé…ç½®");
         }
     }
 }
@@ -136,14 +142,14 @@ void WifiManagerEx::startWebServer()
     setupWebHandlers();
     server.begin();
     webServerActive = true;
-    Serial.println("WebServerÒÑÆô¶¯");
+    Serial.println("WebServerå·²å¯åŠ¨");
 }
 
 void WifiManagerEx::stopWebServer()
 {
     server.stop();
     webServerActive = false;
-    Serial.println("WebServerÒÑ¹Ø±Õ");
+    Serial.println("WebServerå·²å…³é—­");
 }
 
 void WifiManagerEx::setupWebHandlers()
@@ -152,7 +158,7 @@ void WifiManagerEx::setupWebHandlers()
               {
         File file = SPIFFS.open("/index.html", "r");
         if (!file) {
-            server.send(404, "text/plain", "ÎÄ¼şÎ´ÕÒµ½");
+            server.send(404, "text/plain", "æ–‡ä»¶æœªæ‰¾åˆ°");
             return;
         }
         String html = file.readString();
@@ -172,8 +178,8 @@ void WifiManagerEx::setupWebHandlers()
             updateProtocolFromString(protocol, ac.next.protocol);
         }
         AC_SET_DATA(temperature, speedValue, modeValue);
-        String response = "ÎÂ¶È=" + temp + "¡ãC, Ä£Ê½=" + mode + ", ·çËÙ=" + speed;
-        if (!protocol.isEmpty()) response += ", Ğ­Òé=" + protocol;
+        String response = "æ¸©åº¦=" + temp + "Â°C, æ¨¡å¼=" + mode + ", é£é€Ÿ=" + speed;
+        if (!protocol.isEmpty()) response += ", åè®®=" + protocol;
         server.send(200, "text/plain", response); });
 
     server.on("/protocol", HTTP_GET, [this]()
@@ -182,7 +188,7 @@ void WifiManagerEx::setupWebHandlers()
     server.on("/sensor", HTTP_GET, [this]()
               {
         if (isnan(envTemperature) || isnan(enHumidity)) {
-            server.send(500, "application/json", "{\"error\":\"´«¸ĞÆ÷¶ÁÈ¡Ê§°Ü\"}");
+            server.send(500, "application/json", "{\"error\":\"ä¼ æ„Ÿå™¨è¯»å–å¤±è´¥\"}");
             return;
         }
         String json = "{\"temp\":" + String(envTemperature, 1) + ",\"humidity\":" + String(enHumidity, 1) + "}";
@@ -194,11 +200,11 @@ void WifiManagerEx::setupWebHandlers()
         powerState = !powerState;
         if (powerState) {
             AC_SET_DATA(26, 3, 1);
-            server.send(200, "text/plain", "¿Õµ÷ÒÑ¿ªÆô");
+            server.send(200, "text/plain", "ç©ºè°ƒå·²å¼€å¯");
         } else {
             ac.next.power = false;
             ac.sendAc();
-            server.send(200, "text/plain", "¿Õµ÷ÒÑ¹Ø±Õ");
+            server.send(200, "text/plain", "ç©ºè°ƒå·²å…³é—­");
         } });
 }
 

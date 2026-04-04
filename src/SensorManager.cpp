@@ -47,7 +47,7 @@ void SensorManager::loop()
     {
         temperature = tempEvent.temperature;
         envTemperature = temperature;
-        if (abs(temperature - lastTemp) >= 0.1f)
+        if (abs(temperature - lastTemp) >= 0.2f)
         {
             changed = true;
             lastTemp = temperature;
@@ -58,7 +58,7 @@ void SensorManager::loop()
     {
         humidity = humidityEvent.relative_humidity;
         enHumidity = humidity;
-        if (abs(humidity - lastHum) >= 0.1f)
+        if (abs(humidity - lastHum) >= 0.5f)
         {
             changed = true;
             lastHum = humidity;

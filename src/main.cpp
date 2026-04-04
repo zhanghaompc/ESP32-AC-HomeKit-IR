@@ -298,19 +298,7 @@ void handleBootButton()
       {
         buttonPressed = true;
         pressStartTime = currentTime;
-        requestSwitchToWiFi = false;
-        requestSwitchToBLE = false;
         Serial.println("按键已按下");
-        Serial.printf("当前状态: isBLEMode=%d, isWiFiMode=%d, isSwitching=%d\n", isBLEMode, isWiFiMode, isSwitching);
-      }
-      else if (buttonPressed && !isSwitching)
-      {
-        if ((currentTime - pressStartTime) >= 1500 && !requestSwitchToWiFi)
-        {
-          requestSwitchToWiFi = true;
-          isSwitching = true;
-          Serial.println("长按触发：开始切换到WiFi模式");
-        }
       }
     }
     else
@@ -320,18 +308,25 @@ void handleBootButton()
         buttonPressed = false;
         unsigned long pressDuration = currentTime - pressStartTime;
         Serial.printf("按键释放，按压时长: %lu ms\n", pressDuration);
-        Serial.printf("判断条件: pressDuration<2000=%d, !requestSwitchToWiFi=%d, !isBLEMode=%d, !isSwitching=%d\n",
-                      pressDuration < 2000, !requestSwitchToWiFi, !isBLEMode, !isSwitching);
 
-        if (pressDuration < 2000 && !requestSwitchToWiFi && !isBLEMode && !isSwitching)
+        if (pressDuration >= 100 && pressDuration < 1500 && !isSwitching)
         {
-          requestSwitchToBLE = true;
           isSwitching = true;
-          Serial.println("短按触发：开始切换到BLE模式");
-        }
-        else if (pressDuration < 2000 && isBLEMode)
-        {
-          Serial.println("当前已是BLE模式，忽略短按");
+          if (isBLEMode)
+          {
+            requestSwitchToWiFi = true;
+            Serial.println("短按触发：BLE -> WiFi");
+          }
+          else if (isWiFiMode)
+          {
+            requestSwitchToBLE = true;
+            Serial.println("短按触发：WiFi -> BLE");
+          }
+          else
+          {
+            requestSwitchToBLE = true;
+            Serial.println("短按触发：默认 -> BLE");
+          }
         }
       }
     }
@@ -417,7 +412,7 @@ struct DEV_AC : Service::Thermostat
     targetTemp->setRange(17.0, 30.0, 1.0);
 
     currentHumidity = new Characteristic::CurrentRelativeHumidity(50);
-    currentHumidity->setRange(0, 100, 1);
+    currentHumidity->setRange(0, 100, 0.1);
 
     thermostatMode = new Characteristic::TargetHeatingCoolingState(0);
     currentState = new Characteristic::CurrentHeatingCoolingState(0);
@@ -673,8 +668,7 @@ void IRrecvDump(void)
   }
 }
 
-// 红外任务由IrManager内部管理
-// void irTaskFunction(void *parameter) {}
+
 
 // 红外发射参数设置（保持不变）
 void AC_SET_DATA(int temp, int speed, int mode, bool power)
@@ -756,27 +750,30 @@ void loop()
   delay(50);
   handleBootButton();
 
-  // 处理BLE和WiFi切换请求
   if (requestSwitchToWiFi)
   {
     requestSwitchToWiFi = false;
+    Serial.println("正在切换到WiFi模式...");
     bleManager.disable();
     isBLEMode = false;
     isWiFiMode = true;
+    ledManager.setColor(CRGB::Green);
+    delay(300);
     wifiManager.enable();
     isSwitching = false;
   }
   if (requestSwitchToBLE)
   {
     requestSwitchToBLE = false;
+    Serial.println("正在切换到BLE模式...");
     wifiManager.disable();
     isBLEMode = true;
     isWiFiMode = false;
+    ledManager.blinkBlue();
     bleManager.enable();
     isSwitching = false;
   }
 
-  // 根据模式调用对应的loop
   if (isBLEMode)
   {
     bleManager.loop();
