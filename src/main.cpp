@@ -4,6 +4,7 @@
 #include "IrManager.h"
 #include "SensorManager.h"
 #include "LedManager.h"
+#include "TimerManager.h"
 
 // 其他必要库
 #include <Ticker.h>
@@ -19,6 +20,7 @@ WifiManagerEx wifiManager;
 IrManager irManager;
 SensorManager sensorManager;
 LedManager ledManager;
+TimerManager timerManager;
 
 // 硬件引脚定义
 #define KEY 0 // BOOT键，用于WiFi/BLE切换
@@ -729,6 +731,7 @@ void setup()
   wifiManager.begin();
   irManager.begin();
   sensorManager.begin();
+  timerManager.begin();
 
   // 初始化红外接收器
   irrecv.enableIRIn();
@@ -798,6 +801,7 @@ void loop()
     ledManager.setColor(CRGB::Green);
     delay(300);
     wifiManager.enable();
+    timerManager.syncTime();
     isSwitching = false;
   }
   if (requestSwitchToBLE)
@@ -821,6 +825,7 @@ void loop()
   {
     wifiManager.loop();
     homeSpan.poll();
+    timerManager.loop();
   }
   IRrecvDump();
   irManager.loop();

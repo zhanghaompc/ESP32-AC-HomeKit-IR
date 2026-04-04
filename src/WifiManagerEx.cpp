@@ -1,5 +1,6 @@
 #include "WifiManagerEx.h"
 #include "LedManager.h"
+#include "TimerManager.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <SPIFFS.h>
@@ -11,6 +12,7 @@ extern float envTemperature;
 extern float enHumidity;
 extern String lastProtocolName;
 extern LedManager ledManager;
+extern TimerManager timerManager;
 void AC_SET_DATA(int temp, int speed, int mode, bool power = true);
 bool updateProtocolFromString(const String &, decode_type_t &);
 extern IRac ac;
@@ -74,6 +76,7 @@ void WifiManagerEx::connectWiFi()
         delay(500);
         ledManager.off();
         Serial.printf("\nWiFi连接成功！IP: %s:8080\n", WiFi.localIP().toString().c_str());
+        timerManager.syncTime();
     }
 }
 
@@ -117,6 +120,7 @@ void WifiManagerEx::checkWiFiConnection()
             delay(500);
             ledManager.off();
             Serial.printf("WiFi已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
+            timerManager.syncTime();
         }
     }
 }

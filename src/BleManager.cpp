@@ -1,6 +1,7 @@
 #include "BleManager.h"
 #include "LedManager.h"
 #include "IrManager.h"
+#include "TimerManager.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <IRremoteESP8266.h>
@@ -11,6 +12,9 @@ extern float enHumidity;
 extern String lastProtocolName;
 extern LedManager ledManager;
 extern IrManager irManager;
+extern TimerManager timerManager;
+extern bool requestSwitchToWiFi;
+extern bool isBLEMode;
 bool updateProtocolFromString(const String &, decode_type_t &);
 extern IRac ac;
 String handleIrReceiving();
@@ -284,6 +288,118 @@ void BleManager::handleCommand(const String &command)
         String s = "protocol=" + lastProtocolName;
         pTxCharacteristic->setValue(s.c_str());
         pTxCharacteristic->notify();
+        giveMutex();
+        return;
+    }
+
+    // 获取当前时间
+    if (command == "time")
+    {
+        String s = "time=" + timerManager.getCurrentTime();
+        pTxCharacteristic->setValue(s.c_str());
+        pTxCharacteristic->notify();
+        giveMutex();
+        return;
+    }
+
+    // 定时任务处理
+    if (command.startsWith("timer="))
+    {
+        String timerCmd = command.substring(6);
+
+        // 查询定时任务列表
+        if (timerCmd == "list")
+        {
+            String s = "timers=" + timerManager.getTaskList();
+            pTxCharacteristic->setValue(s.c_str());
+            pTxCharacteristic->notify();
+            giveMutex();
+            return;
+        }
+
+        // 添加定时任务 timer=add;hour=8;minute=0;temp=26;mode=1;speed=2;power=on;repeat=1
+        if (timerCmd.startsWith("add;"))
+        {
+            int hour = 0, minute = 0, temp = 25, mode = 0, speed = 0;
+            bool power = true, repeat = false;
+
+            int pos = 4;
+            while (pos < timerCmd.length())
+            {
+                int semi = timerCmd.indexOf(';', pos);
+                if (semi == -1)
+                    semi = timerCmd.length();
+                String part = timerCmd.substring(pos, semi);
+
+                if (part.startsWith("hour="))
+                    hour = part.substring(5).toInt();
+                else if (part.startsWith("minute="))
+                    minute = part.substring(7).toInt();
+                else if (part.startsWith("temp="))
+                    temp = part.substring(5).toInt();
+                else if (part.startsWith("mode="))
+                    mode = part.substring(5).toInt();
+                else if (part.startsWith("speed="))
+                    speed = part.substring(6).toInt();
+                else if (part.startsWith("power="))
+                    power = (part.substring(6) == "on");
+                else if (part.startsWith("repeat="))
+                    repeat = (part.substring(7) == "1");
+
+                pos = semi + 1;
+            }
+
+            int id = timerManager.addTask(hour, minute, temp, mode, speed, power, repeat);
+            String s = (id >= 0) ? String("timer_add=success;id=") + id : "timer_add=failed";
+            pTxCharacteristic->setValue(s.c_str());
+            pTxCharacteristic->notify();
+            giveMutex();
+            return;
+        }
+
+        // 删除定时任务 timer=delete;id=1
+        if (timerCmd.startsWith("delete;id="))
+        {
+            int id = timerCmd.substring(10).toInt();
+            bool ok = timerManager.deleteTask(id);
+            String s = ok ? String("timer_delete=success;id=") + id : "timer_delete=failed";
+            pTxCharacteristic->setValue(s.c_str());
+            pTxCharacteristic->notify();
+            giveMutex();
+            return;
+        }
+
+        // 启用/禁用定时任务 timer=enable;id=1;state=1
+        if (timerCmd.startsWith("enable;id="))
+        {
+            int idPos = timerCmd.indexOf(";id=") + 4;
+            int statePos = timerCmd.indexOf(";state=");
+            int id = timerCmd.substring(idPos, statePos).toInt();
+            bool state = (timerCmd.substring(statePos + 7) == "1");
+            bool ok = timerManager.enableTask(id, state);
+            String s = ok ? String("timer_enable=success;id=") + id : "timer_enable=failed";
+            pTxCharacteristic->setValue(s.c_str());
+            pTxCharacteristic->notify();
+            giveMutex();
+            return;
+        }
+    }
+
+    // 切换到WiFi模式
+    if (command == "wifi_mode")
+    {
+        if (isBLEMode)
+        {
+            requestSwitchToWiFi = true;
+            pTxCharacteristic->setValue("switching=wifi");
+            pTxCharacteristic->notify();
+            Serial.println("收到切换WiFi模式命令");
+        }
+        else
+        {
+            pTxCharacteristic->setValue("already=wifi_mode");
+            pTxCharacteristic->notify();
+        }
         giveMutex();
         return;
     }
