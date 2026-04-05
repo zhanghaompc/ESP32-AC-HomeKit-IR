@@ -149,13 +149,14 @@ void BleManager::sendTempHumidity(float temp, float humidity)
 {
     if (!deviceConnected || !pTxCharacteristic)
         return;
-    if (abs(temp - lastSentTemp) < 0.2f && abs(humidity - lastSentHumidity) < 0.5f)
+    if (abs(temp - lastSentTemp) < 0.1f && abs(humidity - lastSentHumidity) < 0.3f)
         return;
 
     if (!takeMutex())
         return;
-    String data = "temp=" + String(temp, 1) + ";humidity=" + String(humidity, 1);
-    pTxCharacteristic->setValue(data.c_str());
+    char buffer[15];
+    snprintf(buffer, sizeof(buffer), "t%.1fh%.1f", temp, humidity);
+    pTxCharacteristic->setValue(buffer);
     pTxCharacteristic->notify();
     lastSentTemp = temp;
     lastSentHumidity = humidity;
@@ -272,10 +273,21 @@ void BleManager::handleCommand(const String &command)
         return;
     }
 
-    // 查询状态
+    // 查询状态 - 只返回温湿度（新格式）
     if (command == "status")
     {
-        String s = "temp=" + String(envTemperature, 1) + ";humidity=" + String(enHumidity, 1) + ";power=" + String(ac.next.power ? "on" : "off") + ";protocol=" + lastProtocolName;
+        char buffer[15];
+        snprintf(buffer, sizeof(buffer), "t%.1fh%.1f", envTemperature, enHumidity);
+        pTxCharacteristic->setValue(buffer);
+        pTxCharacteristic->notify();
+        giveMutex();
+        return;
+    }
+
+    // 查询电源状态
+    if (command == "power")
+    {
+        String s = String("power=") + (ac.next.power ? "on" : "off");
         pTxCharacteristic->setValue(s.c_str());
         pTxCharacteristic->notify();
         giveMutex();

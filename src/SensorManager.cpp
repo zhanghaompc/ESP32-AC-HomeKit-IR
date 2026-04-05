@@ -31,7 +31,7 @@ void SensorManager::loop()
         return;
     }
 
-    if (millis() - lastSensorRead < 2500)
+    if (millis() - lastSensorRead < 1000)
     {
         return;
     }

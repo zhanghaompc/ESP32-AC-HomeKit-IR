@@ -8,10 +8,14 @@
   </view>
 
   <!-- 当前时间显示 -->
-  <view class="time-card" bindtap="refreshTime">
+  <view class="time-card">
     <text class="time-label">设备当前时间</text>
-    <text class="time-value">{{currentTime ? currentTime : '--:--:--'}}</text>
+    <text class="time-value" bindtap="refreshTime">{{currentTime ? currentTime : '--:--:--'}}</text>
     <text class="time-date">{{currentDate ? currentDate : '--'}}</text>
+    <button class="sync-time-btn" bindtap="syncTime" disabled="{{!isConnected}}">
+      <i class="fas fa-sync-alt"></i>
+      <text>同步时间</text>
+    </button>
   </view>
 
   <!-- 任务列表 -->

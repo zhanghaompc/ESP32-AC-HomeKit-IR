@@ -31,7 +31,7 @@
 }
 
 .ble-status.connected {
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
 }
 
@@ -46,7 +46,7 @@
   border-radius: 24rpx;
   padding: 30rpx;
   margin-bottom: 32rpx;
-  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.1);
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.1);
   text-align: center;
   cursor: pointer;
   transition: transform 0.2s;
@@ -67,7 +67,7 @@
   font-size: 48rpx;
   font-weight: bold;
   color: #333;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   margin-bottom: 10rpx;
   display: block;
 }
@@ -76,6 +76,35 @@
   font-size: 24rpx;
   color: #666;
   display: block;
+  margin-bottom: 16rpx;
+}
+
+/* 同步时间按钮 */
+.sync-time-btn {
+  padding: 12rpx 24rpx;
+  background: #3a7bd5;
+  color: white;
+  border-radius: 30rpx;
+  font-size: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  border: none;
+  margin-top: 12rpx;
+  box-shadow: 0 4rpx 12rpx rgba(58, 123, 213, 0.2);
+  transition: all 0.2s ease;
+}
+
+.sync-time-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2rpx 6rpx rgba(58, 123, 213, 0.15);
+}
+
+.sync-time-btn[disabled] {
+  background: #e0e0e0;
+  color: #999;
+  box-shadow: none;
 }
 
 /* WiFi模式切换按钮 */
@@ -83,7 +112,7 @@
   width: 100%;
   height: 88rpx;
   line-height: 88rpx;
-  background: #4CAF50;
+  background: #4caf50;
   color: white;
   font-size: 30rpx;
   font-weight: 600;
@@ -132,7 +161,7 @@
 .refresh-btn {
   padding: 10rpx 20rpx;
   margin: 0;
-  background: #3A7BD5;
+  background: #3a7bd5;
   color: #fff;
   border-radius: 35rpx;
   font-size: 26rpx;
@@ -153,7 +182,7 @@
   padding: 80rpx 0;
   background: white;
   border-radius: 24rpx;
-  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.1);
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.1);
 }
 
 .empty-icon {
@@ -198,7 +227,7 @@
 }
 
 .timer-item.enabled {
-  border-left: 4rpx solid #4CAF50;
+  border-left: 4rpx solid #4caf50;
 }
 
 .timer-item.disabled {
@@ -222,7 +251,7 @@
   width: 48rpx;
   height: 48rpx;
   line-height: 48rpx;
-  background: #3A7BD5;
+  background: #3a7bd5;
   color: white;
   border-radius: 50%;
   text-align: center;
@@ -245,12 +274,12 @@
   font-size: 42rpx;
   font-weight: 600;
   color: #333;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
 }
 
 .timer-time .repeat {
   font-size: 20rpx;
-  color: #3A7BD5;
+  color: #3a7bd5;
   background: #e3f2fd;
   padding: 4rpx 12rpx;
   border-radius: 16rpx;
@@ -273,12 +302,12 @@
 }
 
 .timer-details text:nth-child(1) {
-  color: #4CAF50;
+  color: #4caf50;
   background: #e8f5e8;
 }
 
 .timer-details text:nth-child(2) {
-  color: #3A7BD5;
+  color: #3a7bd5;
   background: #e3f2fd;
 }
 
@@ -325,7 +354,7 @@
   width: 100%;
   height: 88rpx;
   line-height: 88rpx;
-  background: #3A7BD5;
+  background: #3a7bd5;
   color: white;
   font-size: 30rpx;
   font-weight: 600;
@@ -358,7 +387,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -411,7 +440,8 @@
   border-top: 2rpx solid #eee;
 }
 
-.cancel-btn, .confirm-btn {
+.cancel-btn,
+.confirm-btn {
   flex: 1;
   height: 80rpx;
   line-height: 80rpx;
@@ -428,8 +458,8 @@
 
 .confirm-btn {
   background: transparent;
-  color: #3A7BD5;
-  border: 2rpx solid #3A7BD5;
+  color: #3a7bd5;
+  border: 2rpx solid #3a7bd5;
 }
 
 /* 表单样式 */
@@ -458,19 +488,19 @@
   height: 120rpx;
   line-height: 120rpx;
   background: #f8f9fa;
-  border: 4rpx solid #3A7BD5;
+  border: 4rpx solid #3a7bd5;
   border-radius: 60rpx;
   text-align: center;
   font-size: 48rpx;
   font-weight: bold;
   color: #333;
-  box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.1);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.1);
 }
 
 .time-separator {
   font-size: 60rpx;
   font-weight: bold;
-  color: #3A7BD5;
+  color: #3a7bd5;
 }
 
 .power-toggle {
@@ -493,8 +523,8 @@
 
 .power-option.active {
   background: transparent;
-  color: #3A7BD5;
-  border: 2rpx solid #3A7BD5;
+  color: #3a7bd5;
+  border: 2rpx solid #3a7bd5;
 }
 
 .temp-control {
@@ -663,7 +693,7 @@
 
 .option.selected {
   background: #e3f2fd;
-  color: #3A7BD5;
+  color: #3a7bd5;
   font-weight: 600;
 }
 
@@ -674,7 +704,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -686,7 +716,7 @@
   padding: 40rpx;
   border-radius: 24rpx;
   text-align: center;
-  box-shadow: 0 12rpx 32rpx rgba(0,0,0,0.3);
+  box-shadow: 0 12rpx 32rpx rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -697,15 +727,19 @@
   width: 80rpx;
   height: 80rpx;
   border: 8rpx solid #f3f3f3;
-  border-top: 8rpx solid #3A7BD5;
+  border-top: 8rpx solid #3a7bd5;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 20rpx;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -728,7 +762,7 @@
 }
 
 .status-toast.success {
-  background: #4CAF50;
+  background: #4caf50;
 }
 
 .status-toast.fail {
@@ -741,8 +775,14 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* 响应式设计 */
@@ -750,15 +790,15 @@
   .container {
     padding: 24rpx;
   }
-  
+
   .timer-item {
     padding: 24rpx;
   }
-  
+
   .timer-time .time {
     font-size: 40rpx;
   }
-  
+
   .add-timer-btn {
     height: 88rpx;
     line-height: 88rpx;

@@ -502,15 +502,25 @@ Page({
 
   // 切换到WiFi模式
   toggleWifiMode() {
-    if (!this.data.isConnected) {
-      this.showStatus('请先连接设备', 'fail');
-      return;
+    this.showStatus('切换到WiFi模式...', '');
+    
+    // 发送WiFi模式切换命令（非阻塞）
+    if (this.data.isConnected && this.data.targetServiceId && this.data.rxCharId) {
+      wx.writeBLECharacteristicValue({
+        deviceId: this.data.deviceId,
+        serviceId: this.data.targetServiceId,
+        characteristicId: this.data.rxCharId,
+        value: this.stringToArrayBuffer('wifi_mode'),
+        success: () => {
+          console.log('命令发送成功: wifi_mode');
+        },
+        fail: (err) => {
+          console.error('命令发送失败:', err);
+        }
+      });
     }
     
-    this.showStatus('切换到WiFi模式...', '');
-    this.sendCommand('wifi_mode');
-    
-    // 直接执行退出操作（必须在用户点击事件中调用）
+    // 直接退出小程序（在用户点击事件中调用）
     console.log('准备退出小程序');
     wx.exitMiniProgram({
       success: function(res) {

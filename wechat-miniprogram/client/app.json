@@ -13,5 +13,10 @@
     "backgroundColor": "#f8f8f8"
   },
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于搜索附近的蓝牙设备，以便连接和控制智能空调"
+    }
+  }
 }

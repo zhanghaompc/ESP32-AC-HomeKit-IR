@@ -78,7 +78,8 @@ Page({
     // 优化新增
     connectionSucceeded: false, // 修复作用域问题
     timers: {}, // 统一定时器管理
-    maxQueueLength: 20 // 命令队列最大长度
+    maxQueueLength: 20, // 命令队列最大长度
+    dataBuffer: '' // 用于存储跨数据包的数据
   },
 
   onLoad() {
@@ -157,25 +158,64 @@ Page({
       platform = systemInfo.platform;
     }
 
-    if (platform === 'android' && !settings.authSetting['scope.userLocation']) {
-      wx.authorize({
-        scope: 'scope.userLocation',
-        success: () => {
-          console.log('位置权限已获取');
-          this.setupBluetooth();
-        },
-        fail: () => {
-          wx.showModal({
-            title: '权限提示',
-            content: '安卓设备搜索蓝牙需要位置权限，请在设置中开启',
-            showCancel: false
-          });
-          this.hideLoading();
-        }
-      });
+    if (platform === 'android') {
+      // 检查定位权限
+      if (!settings.authSetting['scope.userLocation']) {
+        wx.authorize({
+          scope: 'scope.userLocation',
+          success: () => {
+            console.log('位置权限已获取');
+            // 检查定位开关是否打开
+            this.checkLocationEnabled();
+          },
+          fail: () => {
+            wx.showModal({
+              title: '权限提示',
+              content: '安卓设备搜索蓝牙需要位置权限，请在设置中开启',
+              confirmText: '去设置',
+              success: (res) => {
+                if (res.confirm) {
+                  wx.openSetting({
+                    success: (res) => {
+                      if (res.authSetting['scope.userLocation']) {
+                        this.checkLocationEnabled();
+                      } else {
+                        this.showStatus('请开启位置权限以搜索蓝牙设备', 'fail');
+                        this.hideLoading();
+                      }
+                    }
+                  });
+                }
+              }
+            });
+            this.hideLoading();
+          }
+        });
+      } else {
+        // 检查定位开关是否打开
+        this.checkLocationEnabled();
+      }
     } else {
       this.setupBluetooth();
     }
+  },
+
+  // 检查定位开关是否打开
+  checkLocationEnabled() {
+    wx.getLocation({
+      type: 'wgs84',
+      success: () => {
+        this.setupBluetooth();
+      },
+      fail: () => {
+        wx.showModal({
+          title: '提示',
+          content: '请打开手机定位开关以搜索蓝牙设备',
+          showCancel: false
+        });
+        this.hideLoading();
+      }
+    });
   },
 
   // 优化：先检查蓝牙状态再初始化
@@ -296,8 +336,8 @@ Page({
         if (device.advertisServiceUUIDs.some(uuid => 
           this.normalizeUUID(uuid) === this.normalizeUUID(this.data.serviceUUID))) {
           
-          // 模糊匹配设备名称（ESP32-AC开头）
-          if (device.name && device.name.startsWith('ESP32-AC')) {
+          // 放宽设备名称过滤条件，只要有名称就添加
+          if (device.name) {
             const deviceList = this.data.deviceList;
             // 避免重复添加
             if (!deviceList.some(d => d.deviceId === device.deviceId)) {
@@ -324,8 +364,19 @@ Page({
           wx.stopBluetoothDevicesDiscovery();
           
           if (this.data.deviceList.length === 0) {
-            this.showStatus('未找到ESP32设备，请确认设备已开机', 'fail');
-            this.hideLoading();
+            this.showStatus('未找到设备，请确认设备已开机并处于可发现状态', 'fail');
+            // 提供手动重新搜索的选项
+            wx.showModal({
+              title: '提示',
+              content: '未找到设备，是否重新搜索？',
+              success: (res) => {
+                if (res.confirm) {
+                  this.startDeviceDiscovery();
+                } else {
+                  this.hideLoading();
+                }
+              }
+            });
           } else {
             this.showStatus(`找到 ${this.data.deviceList.length} 个设备`, 'success');
             this.hideLoading();
@@ -337,7 +388,22 @@ Page({
         });
       },
       fail: (err) => {
-        this.showStatus('搜索设备失败: ' + err.errMsg, 'fail');
+        console.error('搜索设备失败:', err);
+        let errorMsg = '搜索设备失败';
+        switch (err.errCode) {
+          case 10000:
+            errorMsg = '蓝牙适配器未初始化';
+            break;
+          case 10001:
+            errorMsg = '蓝牙适配器不可用，请开启蓝牙';
+            break;
+          case 10002:
+            errorMsg = '设备未找到，请确保设备处于可发现状态';
+            break;
+          default:
+            errorMsg = '搜索设备失败: ' + err.errMsg;
+        }
+        this.showStatus(errorMsg, 'fail');
         this.hideLoading();
       }
     });
@@ -382,7 +448,19 @@ Page({
     
     if (this.data.connectionAttempts > this.data.maxConnectionAttempts) {
       this.showStatus('连接尝试次数过多，请稍后再试', 'fail');
-      this.hideLoading();
+      // 提供手动重新连接的选项
+      wx.showModal({
+        title: '提示',
+        content: '连接失败，是否重新尝试？',
+        success: (res) => {
+          if (res.confirm) {
+            this.setData({ connectionAttempts: 0 });
+            this.connectBLE(deviceId);
+          } else {
+            this.hideLoading();
+          }
+        }
+      });
       return;
     }
     
@@ -427,7 +505,22 @@ Page({
       },
       fail: (err) => {
         this.clearTimer(`connect_${deviceId}`); // 清除超时定时器
-        this.showStatus(`连接失败: ${err.errMsg}`, 'fail');
+        console.error('连接失败:', err);
+        let errorMsg = '连接失败';
+        switch (err.errCode) {
+          case 10003:
+            errorMsg = '连接失败，请确保设备距离较近且未被其他设备连接';
+            break;
+          case 10012:
+            errorMsg = '连接超时，请稍后重试';
+            break;
+          case 10013:
+            errorMsg = '设备ID无效，请重新搜索设备';
+            break;
+          default:
+            errorMsg = `连接失败: ${err.errMsg}`;
+        }
+        this.showStatus(errorMsg, 'fail');
         
         if (this.data.connectionAttempts < this.data.maxConnectionAttempts) {
           setTimeout(() => this.connectBLE(deviceId), 2000); // 2秒后重试
@@ -503,10 +596,9 @@ Page({
           this.setData({ rxCharId: rxCharId, txCharId: txCharId });
           this.showStatus('蓝牙初始化完成', 'success');
           
-          // 先查询设备状态，再主动查询当前协议
+          // 连接成功后，分步获取状态
           setTimeout(() => {
-            this.queryDeviceStatus();
-            this.queryCurrentProtocol(); // 主动查询ESP32当前协议
+            this.loadDeviceStatus();
           }, 800);
           this.hideLoading();
         }
@@ -548,6 +640,22 @@ Page({
     console.log('主动查询设备当前协议');
   },
 
+  // 连接成功后，分步获取状态
+  loadDeviceStatus() {
+    // 1. 获取温湿度
+    this.enqueueCommand('status', this.data.rxCharId);
+    
+    // 2. 获取电源状态
+    setTimeout(() => {
+      this.enqueueCommand('power', this.data.rxCharId);
+      
+      // 3. 获取协议
+      setTimeout(() => {
+        this.enqueueCommand('get_protocol', this.data.rxCharId);
+      }, 300);
+    }, 300);
+  },
+
   // 处理接收到的数据
   processData(buffer) {
     try {
@@ -555,14 +663,39 @@ Page({
       console.log('[BLE接收] 原始数据:', Array.from(new Uint8Array(buffer)));
       console.log('[BLE接收] 解析数据:', data);
       
-      // 1. 解析温湿度（支持多种格式）
+      // 1. 解析新格式温湿度数据 (t25.5h44.6)
+      if (data.startsWith('t')) {
+        const tempMatch = data.match(/t([\d.]+)h([\d.]+)/);
+        if (tempMatch) {
+          const tempValue = tempMatch[1].toString();
+          const humidityValue = tempMatch[2].toString();
+          console.log('温湿度数据解析成功 (新格式):', { temp: tempValue, humidity: humidityValue });
+          
+          this.setData({
+            temp: tempValue,
+            humidity: humidityValue
+          }, () => {
+            console.log('温湿度数据更新成功');
+          });
+          return;
+        }
+      }
+      
+      // 2. 解析旧格式温湿度数据 (temp=25.5;humidity=44.6)
       const tempMatch = data.match(/temp=([\d.]+)/);
       const humidityMatch = data.match(/humidity=([\d.]+)/);
       if (tempMatch && humidityMatch) {
+        let tempValue = tempMatch[1].toString();
+        let humidityValue = humidityMatch[1].toString();
+        console.log('温湿度数据解析成功 (旧格式):', { temp: tempValue, humidity: humidityValue });
+        
         this.setData({
-          temp: tempMatch[1],
-          humidity: humidityMatch[1]
+          temp: tempValue,
+          humidity: humidityValue
+        }, () => {
+          console.log('温湿度数据更新成功');
         });
+        
         // 解析状态中的协议
         const protocolMatchInStatus = data.match(/protocol=(\w+)/);
         if (protocolMatchInStatus && protocolMatchInStatus.length >= 2) {
@@ -581,7 +714,7 @@ Page({
         return;
       }
       
-      // 2. 解析协议查询/设置返回（连接后自动发送的协议也走这里）
+      // 3. 解析协议查询/设置返回（连接后自动发送的协议也走这里）
       const protocolMatch = data.match(/^protocol=(\w+)$/);
       if (protocolMatch && protocolMatch.length >= 2) {
         const protocol = protocolMatch[1];
@@ -604,7 +737,7 @@ Page({
         return;
       }
       
-      // 3. 解析协议学习结果
+      // 4. 解析协议学习结果
       const learnMatch = data.match(/learn=(\w+)(:(\w+))?/);
       if (learnMatch && learnMatch.length >= 2) {
         const status = learnMatch[1];
@@ -621,7 +754,7 @@ Page({
         return;
       }
       
-      // 4. 解析电源状态返回
+      // 5. 解析电源状态返回
       const powerMatch = data.match(/power=(on|off)/);
       if (powerMatch && powerMatch.length >= 2) {
         this.setData({ isPowerOn: (powerMatch[1] === 'on') });
@@ -629,8 +762,8 @@ Page({
         return;
       }
       
-      // 5. 其他非温湿度数据只输出到控制台，不在界面显示
-      if (data && !data.startsWith('temp=') && !data.startsWith('protocol=')) {
+      // 6. 其他非温湿度数据只输出到控制台，不在界面显示
+      if (data && !data.startsWith('temp=') && !data.startsWith('protocol=') && !data.startsWith('t')) {
         console.log('收到数据:', data);
       }
       
@@ -688,6 +821,7 @@ Page({
       const command = 'power=off';
       console.log('[发送命令] 电源切换:', command);
       this.enqueueCommand(command, this.data.rxCharId);
+      this.showStatus('正在关闭空调...', '');
     }
   },
 
