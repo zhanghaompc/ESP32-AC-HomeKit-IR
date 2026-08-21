@@ -2,6 +2,7 @@
 #include "IrManager.h"
 #include <WiFi.h>
 #include <time.h>
+#include <sys/time.h>
 
 extern IrManager irManager;
 
@@ -42,6 +43,39 @@ void TimerManager::syncTime()
             Serial.println("时间同步失败");
         }
     }
+}
+
+// 手机通过 BLE 校时，写入 ESP32 硬件 RTC，BLE 模式下不依赖 WiFi/NTP
+bool TimerManager::setTimeFromPhone(const String &datetime)
+{
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    if (sscanf(datetime.c_str(), "%d-%d-%d %d:%d:%d", &year, &month, &day, &hour, &minute, &second) != 6)
+        return false;
+
+    if (year < 2020 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31 ||
+        hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59)
+        return false;
+
+    // 固定东八区，保证 mktime 与 getLocalTime 的解释一致
+    setenv("TZ", "CST-8", 1);
+    tzset();
+
+    struct tm tmInfo = {};
+    tmInfo.tm_year = year - 1900;
+    tmInfo.tm_mon = month - 1;
+    tmInfo.tm_mday = day;
+    tmInfo.tm_hour = hour;
+    tmInfo.tm_min = minute;
+    tmInfo.tm_sec = second;
+    tmInfo.tm_isdst = 0;
+
+    time_t t = mktime(&tmInfo);
+    struct timeval tv = {t, 0};
+    settimeofday(&tv, nullptr);
+
+    timeSynced = true;
+    Serial.printf("收到手机校时: %s\n", datetime.c_str());
+    return true;
 }
 
 bool TimerManager::isTimeSynced() const
@@ -158,6 +192,31 @@ int TimerManager::addTask(int hour, int minute, int temp, int mode, int speed, b
         }
     }
     return -1;
+}
+
+// 原地更新任务（不删除重建），避免“重新添加把原任务删掉”的困惑
+bool TimerManager::updateTask(int id, int hour, int minute, int temp, int mode, int speed, bool power, bool repeat)
+{
+    for (int i = 0; i < MAX_TIMER_TASKS; i++)
+    {
+        if (tasks[i].valid && tasks[i].id == id)
+        {
+            tasks[i].hour = hour;
+            tasks[i].minute = minute;
+            tasks[i].temp = temp;
+            tasks[i].mode = mode;
+            tasks[i].speed = speed;
+            tasks[i].power = power;
+            tasks[i].repeat = repeat;
+            tasks[i].enabled = true;
+            saveTasks();
+            Serial.printf("更新定时任务 #%d: %02d:%02d 温度=%d 模式=%d 风速=%d 电源=%s 重复=%s\n",
+                          tasks[i].id, hour, minute, temp, mode, speed,
+                          power ? "开" : "关", repeat ? "是" : "否");
+            return true;
+        }
+    }
+    return false;
 }
 
 bool TimerManager::deleteTask(int id)

@@ -26,6 +26,7 @@ private:
     void stopWebServer();
     void connectWiFi();
     void disconnectWiFi();
+    void syncHomeSpanWifi();
     unsigned long lastAttemptTime = 0;
     const unsigned long retryInterval = 5000;
 };

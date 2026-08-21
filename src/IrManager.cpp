@@ -1,6 +1,7 @@
 #include "IrManager.h"
 #include "LedManager.h"
 #include "BleManager.h"
+#include "Debug.h"
 #include <FastLED.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
@@ -56,22 +57,30 @@ void irTaskFunction(void *parameter)
             ac.next.clean = false;
             ac.next.clock = -1;
 
-            Serial.println("准备发射红外信号...");
-            Serial.println("当前空调协议: " + lastProtocolName);
-            Serial.printf("待发射参数 - 温度: %d, 风速: %d, 模式: %d, 电源: %s\n", temp, speed, mode, power ? "开启" : "关闭");
+            DBG("准备发射红外信号...\n");
+            DBG("当前空调协议: %s\n", lastProtocolName.c_str());
+            DBG("待发射参数 - 温度: %d, 风速: %d, 模式: %d, 电源: %s\n", temp, speed, mode, power ? "开启" : "关闭");
 
             ac.sendAc();
             delay(100);
 
             ledManager.off();
 
-            if (isBLEMode && bleManager.isConnected())
+            if (isBLEMode)
             {
-                ledManager.setColor(CRGB::Blue);
+                if (bleManager.isConnected())
+                {
+                    ledManager.setColor(CRGB::Blue);
+                }
+                else
+                {
+                    // 未连接时恢复“等待连接”的蓝色闪烁，避免看起来像蓝牙已关闭
+                    ledManager.blinkBlue();
+                }
             }
 
-            Serial.println("当前空调的协议: " + lastProtocolName);
-            Serial.printf("设置温度: %d, 风速: %d, 模式: %d, 电源: %s(运行核心: %d)\n", temp, speed, mode, power ? "开启" : "关闭", xPortGetCoreID());
+            DBG("当前空调的协议: %s\n", lastProtocolName.c_str());
+            DBG("设置温度: %d, 风速: %d, 模式: %d, 电源: %s(运行核心: %d)\n", temp, speed, mode, power ? "开启" : "关闭", xPortGetCoreID());
         }
         delay(10);
     }
@@ -103,7 +112,7 @@ void IrManager::send(int temp, int speed, int mode, bool power)
     pendingPower = power;
     irSendPending = true;
     portEXIT_CRITICAL(&irMux);
-    Serial.printf("已请求红外发射: 温度:%d℃, 风速:%d, 模式:%d, 电源:%s\n", temp, speed, mode, power ? "开启" : "关闭");
+    DBG("已请求红外发射: 温度:%d℃, 风速:%d, 模式:%d, 电源:%s\n", temp, speed, mode, power ? "开启" : "关闭");
 }
 
 String IrManager::learnProtocol() { return ""; }

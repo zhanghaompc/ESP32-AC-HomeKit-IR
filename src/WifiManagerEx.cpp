@@ -5,6 +5,7 @@
 #include <FastLED.h>
 #include <SPIFFS.h>
 #include <WiFiManager.h>
+#include <homespan.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
 
@@ -71,12 +72,24 @@ void WifiManagerEx::connectWiFi()
     else
     {
         wifiConnected = true;
+        syncHomeSpanWifi();
         ledManager.stopBlink();
         ledManager.setColor(CRGB::Green);
         delay(500);
         ledManager.off();
         Serial.printf("\nWiFi连接成功！IP: %s:8080\n", WiFi.localIP().toString().c_str());
         timerManager.syncTime();
+    }
+}
+
+void WifiManagerEx::syncHomeSpanWifi()
+{
+    String ssid = WiFi.SSID();
+    String pass = WiFi.psk();
+    if (ssid.length() > 0)
+    {
+        homeSpan.setWifiCredentials(ssid.c_str(), pass.c_str());
+        Serial.println("已同步HomeSpan WiFi凭据");
     }
 }
 
@@ -115,6 +128,7 @@ void WifiManagerEx::checkWiFiConnection()
         {
             wasConnected = true;
             wifiConnected = true;
+            syncHomeSpanWifi();
             ledManager.stopBlink();
             ledManager.setColor(CRGB::Green);
             delay(500);

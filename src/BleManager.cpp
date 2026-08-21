@@ -2,6 +2,7 @@
 #include "LedManager.h"
 #include "IrManager.h"
 #include "TimerManager.h"
+#include "Debug.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <IRremoteESP8266.h>
@@ -15,6 +16,7 @@ extern IrManager irManager;
 extern TimerManager timerManager;
 extern bool requestSwitchToWiFi;
 extern bool isBLEMode;
+extern IRrecv irrecv;
 bool updateProtocolFromString(const String &, decode_type_t &);
 extern IRac ac;
 String handleIrReceiving();
@@ -32,6 +34,7 @@ public:
         Serial.println("BLE客户端已连接");
         ledManager.stopBlink();
         ledManager.setColor(CRGB::Blue);
+        pServer->getAdvertising()->stop(); // 连接后停止广播，省电且更规范
         parent->sendTempHumidity(envTemperature, enHumidity);
         parent->sendProtocol(lastProtocolName);
     }
@@ -176,18 +179,41 @@ void BleManager::sendProtocol(const String &protocol)
     giveMutex();
 }
 
+// 分块发送：BLE 默认单包最多 20 字节，超长消息会被截断。
+// 每片 18 字节，块与块之间留 10ms，最后追加 '\n' 作为完整消息结束标记。
+// 注意：调用前必须已持有 xBleMutex（由 handleCommand 内的调用保证）。
+void BleManager::sendChunked(const String &data)
+{
+    if (!deviceConnected || !pTxCharacteristic)
+        return;
+
+    const size_t chunkSize = 18;
+    for (size_t i = 0; i < data.length(); i += chunkSize)
+    {
+        String chunk = data.substring(i, i + chunkSize);
+        pTxCharacteristic->setValue(chunk.c_str());
+        pTxCharacteristic->notify();
+        delay(10);
+    }
+    pTxCharacteristic->setValue("\n");
+    pTxCharacteristic->notify();
+}
+
 void BleManager::startAdvertising()
 {
     BLEAdvertising *adv = BLEDevice::getAdvertising();
     adv->addServiceUUID(BLE_SERVICE_UUID);
     adv->setScanResponse(true);
+    // 空闲广播间隔约 1~1.5 秒（单位 0.625ms），降低空闲功耗
+    adv->setMinInterval(1600);
+    adv->setMaxInterval(2400);
     adv->start();
 }
 
 // ====================== 核心指令处理（线程安全+匹配小程序） ======================
 void BleManager::handleCommand(const String &command)
 {
-    Serial.printf("BLE命令: %s\n", command.c_str());
+    DBG("BLE命令: %s\n", command.c_str());
     if (!pTxCharacteristic || !takeMutex())
         return;
 
@@ -196,8 +222,7 @@ void BleManager::handleCommand(const String &command)
     {
         ac.next.power = false;
         irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, false);
-        pTxCharacteristic->setValue("power=off");
-        pTxCharacteristic->notify();
+        sendChunked("power=off");
         giveMutex();
         return;
     }
@@ -217,8 +242,7 @@ void BleManager::handleCommand(const String &command)
         irManager.send(temp, speed, mode, true);
 
         String resp = String("temp=") + temp + ";mode=" + mode + ";speed=" + speed + ";power=on";
-        pTxCharacteristic->setValue(resp.c_str());
-        pTxCharacteristic->notify();
+        sendChunked(resp);
         giveMutex();
         return;
     }
@@ -229,8 +253,7 @@ void BleManager::handleCommand(const String &command)
         String proto = command.substring(9);
         bool ok = updateProtocolFromString(proto, ac.next.protocol);
         String res = ok ? String("protocol=") + proto : "protocol=invalid";
-        pTxCharacteristic->setValue(res.c_str());
-        pTxCharacteristic->notify();
+        sendChunked(res);
         giveMutex();
         return;
     }
@@ -238,12 +261,12 @@ void BleManager::handleCommand(const String &command)
     // 学习模式
     if (command == "learn=start")
     {
-        pTxCharacteristic->setValue("learn=waiting");
-        pTxCharacteristic->notify();
+        sendChunked("learn=waiting");
         giveMutex();
 
         ledManager.stopBlink();
         ledManager.setColor(CRGB::Purple);
+        irrecv.enableIRIn(); // 学习期间开启红外接收
         unsigned long start = millis();
         String proto = "";
 
@@ -253,6 +276,7 @@ void BleManager::handleCommand(const String &command)
             delay(100);
         }
 
+        irrecv.disableIRIn(); // 学习结束关闭红外接收
         ledManager.off();
         if (deviceConnected)
             ledManager.setColor(CRGB::Blue);
@@ -262,13 +286,12 @@ void BleManager::handleCommand(const String &command)
         {
             updateProtocolFromString(proto, ac.next.protocol);
             String res = String("learn=success:") + proto;
-            pTxCharacteristic->setValue(res.c_str());
+            sendChunked(res);
         }
         else
         {
-            pTxCharacteristic->setValue("learn=timeout");
+            sendChunked("learn=timeout");
         }
-        pTxCharacteristic->notify();
         giveMutex();
         return;
     }
@@ -278,8 +301,7 @@ void BleManager::handleCommand(const String &command)
     {
         char buffer[15];
         snprintf(buffer, sizeof(buffer), "t%.1fh%.1f", envTemperature, enHumidity);
-        pTxCharacteristic->setValue(buffer);
-        pTxCharacteristic->notify();
+        sendChunked(buffer);
         giveMutex();
         return;
     }
@@ -288,8 +310,7 @@ void BleManager::handleCommand(const String &command)
     if (command == "power")
     {
         String s = String("power=") + (ac.next.power ? "on" : "off");
-        pTxCharacteristic->setValue(s.c_str());
-        pTxCharacteristic->notify();
+        sendChunked(s);
         giveMutex();
         return;
     }
@@ -298,8 +319,17 @@ void BleManager::handleCommand(const String &command)
     if (command == "get_protocol")
     {
         String s = "protocol=" + lastProtocolName;
-        pTxCharacteristic->setValue(s.c_str());
-        pTxCharacteristic->notify();
+        sendChunked(s);
+        giveMutex();
+        return;
+    }
+
+    // 手机校时 time=YYYY-MM-DD HH:MM:SS
+    if (command.startsWith("time="))
+    {
+        bool ok = timerManager.setTimeFromPhone(command.substring(5));
+        String res = ok ? "time=ok" : "time=invalid";
+        sendChunked(res);
         giveMutex();
         return;
     }
@@ -308,8 +338,7 @@ void BleManager::handleCommand(const String &command)
     if (command == "time")
     {
         String s = "time=" + timerManager.getCurrentTime();
-        pTxCharacteristic->setValue(s.c_str());
-        pTxCharacteristic->notify();
+        sendChunked(s);
         giveMutex();
         return;
     }
@@ -323,8 +352,7 @@ void BleManager::handleCommand(const String &command)
         if (timerCmd == "list")
         {
             String s = "timers=" + timerManager.getTaskList();
-            pTxCharacteristic->setValue(s.c_str());
-            pTxCharacteristic->notify();
+            sendChunked(s);
             giveMutex();
             return;
         }
@@ -363,8 +391,48 @@ void BleManager::handleCommand(const String &command)
 
             int id = timerManager.addTask(hour, minute, temp, mode, speed, power, repeat);
             String s = (id >= 0) ? String("timer_add=success;id=") + id : "timer_add=failed";
-            pTxCharacteristic->setValue(s.c_str());
-            pTxCharacteristic->notify();
+            sendChunked(s);
+            giveMutex();
+            return;
+        }
+
+        // 更新定时任务 timer=update;id=1;hour=8;minute=0;temp=26;mode=1;speed=2;power=on;repeat=1
+        if (timerCmd.startsWith("update;"))
+        {
+            int id = 0, hour = 0, minute = 0, temp = 25, mode = 0, speed = 0;
+            bool power = true, repeat = false;
+
+            int pos = 7; // "update;" 长度
+            while (pos < timerCmd.length())
+            {
+                int semi = timerCmd.indexOf(';', pos);
+                if (semi == -1)
+                    semi = timerCmd.length();
+                String part = timerCmd.substring(pos, semi);
+
+                if (part.startsWith("id="))
+                    id = part.substring(3).toInt();
+                else if (part.startsWith("hour="))
+                    hour = part.substring(5).toInt();
+                else if (part.startsWith("minute="))
+                    minute = part.substring(7).toInt();
+                else if (part.startsWith("temp="))
+                    temp = part.substring(5).toInt();
+                else if (part.startsWith("mode="))
+                    mode = part.substring(5).toInt();
+                else if (part.startsWith("speed="))
+                    speed = part.substring(6).toInt();
+                else if (part.startsWith("power="))
+                    power = (part.substring(6) == "on");
+                else if (part.startsWith("repeat="))
+                    repeat = (part.substring(7) == "1");
+
+                pos = semi + 1;
+            }
+
+            bool ok = timerManager.updateTask(id, hour, minute, temp, mode, speed, power, repeat);
+            String s = ok ? String("timer_update=success;id=") + id : "timer_update=failed";
+            sendChunked(s);
             giveMutex();
             return;
         }
@@ -375,8 +443,7 @@ void BleManager::handleCommand(const String &command)
             int id = timerCmd.substring(10).toInt();
             bool ok = timerManager.deleteTask(id);
             String s = ok ? String("timer_delete=success;id=") + id : "timer_delete=failed";
-            pTxCharacteristic->setValue(s.c_str());
-            pTxCharacteristic->notify();
+            sendChunked(s);
             giveMutex();
             return;
         }
@@ -390,8 +457,7 @@ void BleManager::handleCommand(const String &command)
             bool state = (timerCmd.substring(statePos + 7) == "1");
             bool ok = timerManager.enableTask(id, state);
             String s = ok ? String("timer_enable=success;id=") + id : "timer_enable=failed";
-            pTxCharacteristic->setValue(s.c_str());
-            pTxCharacteristic->notify();
+            sendChunked(s);
             giveMutex();
             return;
         }
@@ -400,25 +466,29 @@ void BleManager::handleCommand(const String &command)
     // 切换到WiFi模式
     if (command == "wifi_mode")
     {
+#ifdef BLE_ONLY
+        // 纯BLE版本不支持WiFi模式
+        sendChunked("wifi=unsupported");
+        giveMutex();
+        return;
+#else
         if (isBLEMode)
         {
             requestSwitchToWiFi = true;
-            pTxCharacteristic->setValue("switching=wifi");
-            pTxCharacteristic->notify();
+            sendChunked("switching=wifi");
             Serial.println("收到切换WiFi模式命令");
         }
         else
         {
-            pTxCharacteristic->setValue("already=wifi_mode");
-            pTxCharacteristic->notify();
+            sendChunked("already=wifi_mode");
         }
         giveMutex();
         return;
+#endif
     }
 
     // 未知命令
     String unknown = String("unknown_cmd:") + command;
-    pTxCharacteristic->setValue(unknown.c_str());
-    pTxCharacteristic->notify();
+    sendChunked(unknown);
     giveMutex();
 }

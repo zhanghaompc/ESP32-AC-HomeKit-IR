@@ -40,6 +40,7 @@ public:
     void loop();
     bool isConnected() const;
     void sendStatus(const String &status);
+    void sendChunked(const String &data);
     void sendTempHumidity(float temp, float humidity);
     void sendProtocol(const String &protocol);
     void handleCommand(const String &command);

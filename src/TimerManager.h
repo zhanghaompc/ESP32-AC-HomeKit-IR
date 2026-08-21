@@ -37,6 +37,7 @@ public:
     void begin();
     void loop();
     void syncTime();
+    bool setTimeFromPhone(const String &datetime);
 
     bool isTimeSynced() const;
     String getCurrentTime();
@@ -44,6 +45,7 @@ public:
     int getMinute();
 
     int addTask(int hour, int minute, int temp, int mode, int speed, bool power, bool repeat);
+    bool updateTask(int id, int hour, int minute, int temp, int mode, int speed, bool power, bool repeat);
     bool deleteTask(int id);
     bool enableTask(int id, bool enabled);
     String getTaskList();

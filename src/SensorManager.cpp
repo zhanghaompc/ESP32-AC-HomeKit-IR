@@ -1,4 +1,5 @@
 #include "SensorManager.h"
+#include "Debug.h"
 #include <Arduino.h>
 
 extern float envTemperature;
@@ -67,7 +68,7 @@ void SensorManager::loop()
 
     if (changed)
     {
-        Serial.printf("传感器读取: 温度=%.1f℃, 湿度=%.1f%%\n", temperature, humidity);
+        DBG("传感器读取: 温度=%.1f℃, 湿度=%.1f%%\n", temperature, humidity);
     }
 }
 

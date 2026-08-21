@@ -1,0 +1,22 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "时欢空调控制器"
+      }
+    },
+    {
+      "path": "pages/timer/timer",
+      "style": {
+        "navigationBarTitleText": "定时任务管理"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarBackgroundColor": "#3A7BD5",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "时欢智能空调助手",
+    "backgroundColor": "#f8f8f8"
+  }
+}

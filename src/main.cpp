@@ -1,22 +1,31 @@
 #include <Arduino.h>
 #include "BleManager.h"
+#ifndef BLE_ONLY
 #include "WifiManagerEx.h"
+#endif
 #include "IrManager.h"
 #include "SensorManager.h"
 #include "LedManager.h"
 #include "TimerManager.h"
+#include "Debug.h"
 
 // 其他必要库
+#ifndef BLE_ONLY
 #include <Ticker.h>
+#endif
 #include <SPIFFS.h>
+#ifndef BLE_ONLY
 #include <homespan.h>
+#endif
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 
 // ======================== 对象化模块 ========================
 BleManager bleManager;
+#ifndef BLE_ONLY
 WifiManagerEx wifiManager;
+#endif
 IrManager irManager;
 SensorManager sensorManager;
 LedManager ledManager;
@@ -51,7 +60,7 @@ float acTargetTemp = 26.0;
 float enHumidity = 50.0;
 
 String lastProtocolName = "KELVINATOR"; // 默认协议
-const uint16_t kIrLed = 16;
+const uint16_t kIrLed = 4; // 红外发射引脚16(usb)
 const uint16_t kRecvPin = 23;
 const uint16_t kCaptureBufferSize = 1024;
 const uint8_t kTimeout = 50;
@@ -63,10 +72,12 @@ IRac ac(kIrLed);
 
 bool wifiConnected = false;
 bool shouldSaveConfig = false;
+#ifndef BLE_ONLY
 bool webServerActive = false; // 默认不启动Web服务器
 Ticker ticker;                // 用于灯光闪烁的定时器
 Ticker rgbBlinkTicker;        // WS2812B闪烁定时器
 WebServer server(8080);
+#endif
 
 // 协议映射表（保持不变）
 
@@ -302,6 +313,7 @@ String handleIrReceiving()
   return "";
 }
 
+#ifndef BLE_ONLY
 // WiFi关闭函数（保持不变）
 void disableWiFi()
 {
@@ -313,6 +325,9 @@ void disableWiFi()
   Serial.println("WiFi已关闭");
 }
 
+#endif
+
+#ifndef BLE_ONLY
 void handleBootButton()
 {
   static bool lastKeyState = HIGH;
@@ -371,6 +386,14 @@ void handleBootButton()
     }
   }
 }
+#else
+void handleBootButton()
+{
+  // 纯BLE版本：按键暂不用于模式切换
+}
+#endif
+
+#ifndef BLE_ONLY
 // WiFi配置回调（保持不变）
 void configModeCallback()
 {
@@ -380,9 +403,12 @@ void configModeCallback()
   ledManager.blinkGreen();
 }
 
+#endif
+
 // 废弃的tick函数
 void tick() {}
 
+#ifndef BLE_ONLY
 // WiFi初始化（保持不变）
 void initWifiManager()
 {
@@ -428,7 +454,9 @@ void checkWiFiConnection()
     ledManager.off();
   }
 }
+#endif
 
+#ifndef BLE_ONLY
 struct DEV_AC : Service::Thermostat
 {
   int acPin;
@@ -534,6 +562,45 @@ struct DEV_AC : Service::Thermostat
   };
 };
 
+// HomeKit 开关：开 = WiFi 模式，关 = BLE 模式（与 App“切换到WiFi模式”对应）
+struct DEV_MODE_SWITCH : Service::Switch
+{
+  SpanCharacteristic *modeOn;
+
+  DEV_MODE_SWITCH() : Service::Switch()
+  {
+    modeOn = new Characteristic::On(false);
+    modeOn->setDescription("BLE/WiFi 模式切换");
+  }
+
+  boolean update()
+  {
+    bool wantWifi = modeOn->getNewVal();
+    if (wantWifi && isBLEMode)
+    {
+      requestSwitchToWiFi = true;
+      Serial.println("HomeKit切换：BLE -> WiFi");
+    }
+    else if (!wantWifi && isWiFiMode)
+    {
+      requestSwitchToBLE = true;
+      Serial.println("HomeKit切换：WiFi -> BLE");
+    }
+    return true;
+  }
+
+  void loop()
+  {
+    if (modeOn->timeVal() > 2000)
+    {
+      modeOn->setVal(isWiFiMode);
+    }
+  }
+};
+
+#endif
+
+#ifndef BLE_ONLY
 // Web服务器设置（修改红外学习灯光）
 void Web_set()
 {
@@ -589,6 +656,7 @@ void Web_set()
             {
     Serial.println("开始协议学习...");
     ledManager.blinkPurple(); // 学习模式：紫灯亮
+    irrecv.enableIRIn(); // 学习期间开启红外接收
 
     unsigned long startTime = millis();
     String detectedProtocol_web = "";
@@ -598,6 +666,7 @@ void Web_set()
       delay(100);
     }
 
+    irrecv.disableIRIn(); // 学习结束关闭红外接收
     ledManager.off(); // 学习结束：紫灯关闭
 
     if (!detectedProtocol_web.isEmpty()) {
@@ -638,6 +707,7 @@ void Web_set()
       server.send(200, "text/plain", "空调已关闭");
     } });
 }
+#endif
 
 // 按键初始化（保持不变）
 
@@ -652,7 +722,9 @@ void key_init()
 // 按键扫描（保持不变）
 void key_scan()
 {
+#ifndef BLE_ONLY
   handleBootButton();
+#endif
 }
 
 // 命令处理（保持不变）
@@ -728,19 +800,22 @@ void setup()
 
   // 初始化各大模块
   // bleManager.begin();
+#ifndef BLE_ONLY
   wifiManager.begin();
+#endif
   irManager.begin();
   sensorManager.begin();
-  timerManager.begin();
 
-  // 初始化红外接收器
-  irrecv.enableIRIn();
+  // 平时不开启红外接收器（默认关闭，省 CPU），协议学习时再 enableIRIn/disableIRIn
 
   // 其他初始化
   if (!SPIFFS.begin(true))
   {
     Serial.println("SPIFFS初始化失败");
   }
+
+  // 定时任务依赖 SPIFFS 存储，必须在 SPIFFS 挂载之后再初始化
+  timerManager.begin();
 
   // 从SPIFFS读取保存的协议
   lastProtocolName = loadProtocolFromSPIFFS();
@@ -764,13 +839,17 @@ void setup()
   ac.next.clock = -1;
   ac.next.power = true;
 
-  // HomeSpan 设置
+  // HomeSpan 设置（仅保留 HomeKit/WiFi 功能的版本）
+#ifndef BLE_ONLY
   homeSpan.setPairingCode("11122333");
   homeSpan.begin(Category::AirConditioners, "空调");
   new SpanAccessory();
   new Service::AccessoryInformation();
   new Characteristic::Identify();
   new DEV_AC(15);
+  new DEV_MODE_SWITCH();
+  new Characteristic::TemperatureDisplayUnits(0); // 0=摄氏度，必须添加
+#endif
 
   // 默认启动BLE模式
   isBLEMode = true;
@@ -789,6 +868,7 @@ void sendEnvironmentDataIfNeeded()
 void loop()
 {
   delay(50);
+#ifndef BLE_ONLY
   handleBootButton();
 
   if (requestSwitchToWiFi)
@@ -815,19 +895,24 @@ void loop()
     bleManager.enable();
     isSwitching = false;
   }
+#endif
 
   if (isBLEMode)
   {
     bleManager.loop();
     sendEnvironmentDataIfNeeded();
+    timerManager.loop(); // 定时任务检查（BLE 模式也要执行）
   }
   if (isWiFiMode)
   {
+#ifndef BLE_ONLY
     wifiManager.loop();
     homeSpan.poll();
     timerManager.loop();
+#else
+    timerManager.loop();
+#endif
   }
-  IRrecvDump();
   irManager.loop();
   sensorManager.loop();
   ledManager.update();
