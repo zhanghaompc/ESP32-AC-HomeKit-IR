@@ -113,7 +113,10 @@
     </view>
 
     <view class="footer-area">
-      <text class="more-info" @tap="goHelp">更多信息 ›</text>
+      <view class="more-info" hover-class="more-info-hover" @tap="goHelp">
+        <text>更多信息</text>
+        <text class="chevron">›</text>
+      </view>
     </view>
 
     <view class="status-bar">
@@ -1189,7 +1192,13 @@ export default {
     },
 
     goHelp() {
-      uni.navigateTo({ url: '/pages/help/help' })
+      uni.navigateTo({
+        url: '/pages/help/help',
+        fail: (err) => {
+          console.error('跳转更多信息失败:', err)
+          this.showStatus('页面打开失败，请重新运行 App 后再试', 'fail')
+        }
+      })
     },
 
     factoryReset() {
@@ -2094,10 +2103,19 @@ export default {
 }
 
 .more-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
   font-size: 22rpx;
   color: #9ca3af;
-  text-decoration: underline;
-  padding: 16rpx 24rpx;
+  padding: 20rpx 40rpx;
+  border-radius: 999rpx;
+  min-width: 220rpx;
+}
+
+.more-info-hover {
+  background: rgba(148, 163, 184, 0.12);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2125,6 +2143,7 @@ export default {
   justify-content: center;
   background: transparent; /* 融入页面背景，不突兀 */
   z-index: 1000;
+  pointer-events: none; /* 透明状态条不拦截底部任何点击 */
 }
 
 .status-text {
@@ -2132,6 +2151,7 @@ export default {
   font-size: 26rpx;
   color: var(--c-text);
   text-align: center;
+  pointer-events: auto;
 }
 
 .status-text.success {
