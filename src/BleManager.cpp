@@ -279,7 +279,9 @@ void BleManager::handleCommand(const String &command)
 
         while (proto.isEmpty() && millis() - start < 10000)
         {
-            proto = handleIrReceiving();
+            String p = handleIrReceiving();
+            // UNKNOWN 是噪声/半截帧，不算识别成功，继续等待真正的协议
+            if (!p.isEmpty() && p != "UNKNOWN") proto = p;
             delay(100);
         }
 
@@ -290,7 +292,7 @@ void BleManager::handleCommand(const String &command)
             ledManager.setColor(CRGB::Blue);
 
         takeMutex();
-        if (!proto.isEmpty())
+        if (!proto.isEmpty() && proto != "UNKNOWN")
         {
             updateProtocolFromString(proto, ac.next.protocol);
             String res = String("learn=success:") + proto;

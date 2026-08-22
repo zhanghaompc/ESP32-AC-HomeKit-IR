@@ -943,7 +943,7 @@ export default {
       this.showStatus('请按下空调遥控器任意按钮...', '')
       this.enqueueCommand('learn=start', this.rxCharId)
 
-      this.createTimer('learn', 10000, () => {
+      this.createTimer('learn', 12000, () => {
         if (this.isLearning) {
           this.isLearning = false
           this.showStatus('学习超时，请重试', 'fail')

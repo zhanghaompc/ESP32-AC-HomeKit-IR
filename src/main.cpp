@@ -743,7 +743,9 @@ void Web_set()
     String detectedProtocol_web = "";
 
     while (detectedProtocol_web.isEmpty() && (millis() - startTime < 10000)) {
-      detectedProtocol_web = handleIrReceiving();
+      String p = handleIrReceiving();
+      // UNKNOWN 是噪声/半截帧，不算识别成功，继续等待真正的协议
+      if (!p.isEmpty() && p != "UNKNOWN") detectedProtocol_web = p;
       delay(100);
     }
 
