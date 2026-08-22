@@ -1,10 +1,7 @@
 <template>
   <view class="container">
     <view class="header">
-      <view>
-        <text class="title">智能空调</text>
-        <text class="subtitle">{{ currentDeviceName || 'ESP32 智能空调' }}</text>
-      </view>
+      <text class="title">{{ currentDeviceName || '智能空调' }}</text>
       <view class="ble-status" :class="connPillClass">
         <text>{{ connPillText }}</text>
       </view>
@@ -115,13 +112,12 @@
       <button class="mini-btn danger" :disabled="!isConnected" @tap="factoryReset">恢复出厂设置</button>
     </view>
 
-    <view class="footer-note">
-      <text>连接后自动校时 · 断线自动重连</text>
-      <text class="footer-sub">长按设备 BOOT 键 3 秒可恢复出厂设置</text>
+    <view class="footer-area">
+      <text class="more-info" @tap="goHelp">更多信息 ›</text>
     </view>
 
-    <view v-if="status" class="status-display" :class="statusType">
-      {{ status }}
+    <view class="status-bar">
+      <text v-if="status" class="status-text" :class="statusType">{{ status }}</text>
     </view>
 
     <view v-if="showProtocolPicker" class="modal-overlay" @tap="hideProtocolPicker">
@@ -1192,6 +1188,10 @@ export default {
       uni.navigateTo({ url: '/pages/timer/timer' })
     },
 
+    goHelp() {
+      uni.navigateTo({ url: '/pages/help/help' })
+    },
+
     factoryReset() {
       if (!this.isConnected) {
         this.showStatus('请先连接设备', 'fail')
@@ -1565,26 +1565,6 @@ export default {
   line-height: 2.4;
 }
 
-.status-display {
-  margin-top: 20rpx;
-  padding: 18rpx 22rpx;
-  border-radius: 16rpx;
-  font-size: 26rpx;
-  text-align: center;
-  background: #f1f5f9;
-  color: #4b5563;
-}
-
-.status-display.success {
-  background: #ecfdf5;
-  color: #15803d;
-}
-
-.status-display.fail {
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
 /* ===== 方案一：精致蓝白（覆盖式优化） ===== */
 .subtitle {
   display: block;
@@ -1748,12 +1728,6 @@ export default {
   border-radius: 24rpx;
 }
 
-.status-display {
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.08);
-}
-
 /* ===== premium-ui-builder-skill：层级、状态、动效 ===== */
 .settings-summary {
   display: flex;
@@ -1833,7 +1807,7 @@ export default {
 
 /* ===== HomeKit 风格：紧凑控制面板 ===== */
 .container {
-  padding: 24rpx 24rpx 60rpx;
+  padding: 24rpx 24rpx calc(140rpx + env(safe-area-inset-bottom));
 }
 
 .title {
@@ -2063,18 +2037,20 @@ export default {
 
 .actions-row {
   display: flex;
+  justify-content: center;
   gap: 16rpx;
   margin-top: 24rpx;
 }
 
 .mini-btn {
-  flex: 1;
+  flex: 0 0 auto;
+  padding: 0 36rpx;
   font-size: 28rpx;
   color: var(--c-text);
   background: var(--c-surface);
   border: 1rpx solid var(--c-border);
-  border-radius: var(--r-md);
-  line-height: 2.8;
+  border-radius: 999rpx;
+  line-height: 2.6;
   transition: transform 0.12s ease-out, opacity 0.15s ease-out;
 }
 
@@ -2099,7 +2075,7 @@ export default {
 .mini-btn.danger {
   color: #dc2626;
   background: #fef2f2;
-  border: 1rpx solid #fecaca;
+  border: none;
 }
 
 .mini-btn:active {
@@ -2110,19 +2086,18 @@ export default {
   opacity: 0.4;
 }
 
-.footer-note {
+.footer-area {
+  margin-top: 36rpx;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6rpx;
-  margin-top: 36rpx;
-  font-size: 22rpx;
-  color: #9ca3af;
 }
 
-.footer-note .footer-sub {
-  font-size: 20rpx;
-  color: #c2c8d0;
+.more-info {
+  font-size: 22rpx;
+  color: #9ca3af;
+  text-decoration: underline;
+  padding: 16rpx 24rpx;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2135,5 +2110,35 @@ export default {
   .step-btn:active {
     transform: none;
   }
+}
+
+/* 底部固定状态区：设置信息始终显示在最下面，不会被遮挡 */
+.status-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(88rpx + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent; /* 融入页面背景，不突兀 */
+  z-index: 1000;
+}
+
+.status-text {
+  max-width: 90%;
+  font-size: 26rpx;
+  color: var(--c-text);
+  text-align: center;
+}
+
+.status-text.success {
+  color: var(--c-success);
+}
+
+.status-text.fail {
+  color: var(--c-error);
 }
 </style>

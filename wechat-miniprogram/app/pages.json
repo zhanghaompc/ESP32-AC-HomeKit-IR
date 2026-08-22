@@ -11,6 +11,12 @@
       "style": {
         "navigationBarTitleText": "定时任务管理"
       }
+    },
+    {
+      "path": "pages/help/help",
+      "style": {
+        "navigationBarTitleText": "更多信息"
+      }
     }
   ],
   "globalStyle": {
