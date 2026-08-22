@@ -1437,4 +1437,97 @@ export default {
   max-height: 60vh;
   overflow-y: auto;
 }
+
+/* ===== 方案一：精致蓝白（覆盖式优化） ===== */
+.time-card {
+  border-radius: 30rpx;
+  box-shadow: 0 16rpx 40rpx rgba(37, 99, 235, 0.10);
+}
+
+.sync-time-btn {
+  color: #2563eb;
+  background: linear-gradient(135deg, #ffffff, #e8f2ff);
+  border: 1rpx solid rgba(37, 99, 235, 0.18);
+}
+
+.section {
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14rpx 36rpx rgba(37, 99, 235, 0.08);
+}
+
+.refresh-btn {
+  color: #2563eb;
+  background: linear-gradient(135deg, #ffffff, #e8f2ff);
+}
+
+.timer-item {
+  border-bottom: 1rpx solid #f1f5f9;
+}
+
+.timer-id {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+}
+
+.id-number {
+  color: #2563eb;
+}
+
+.back-home-btn,
+.confirm-btn,
+.add-timer-btn {
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  box-shadow: 0 12rpx 26rpx rgba(37, 99, 235, 0.24);
+}
+
+.power-option.active {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eef4ff;
+}
+
+/* ===== premium-ui-builder-skill：组件状态 ===== */
+.add-timer-btn:active,
+.wifi-mode-btn:active,
+.sync-time-btn:active,
+.refresh-btn:active,
+.back-home-btn:active,
+.confirm-btn:active,
+.cancel-btn:active,
+.delete-btn:active,
+.temp-button:active,
+.mode-select-btn:active,
+.speed-select-btn:active,
+.power-option:active {
+  transform: scale(0.97);
+  opacity: 0.92;
+}
+
+.timer-item:active {
+  background: #f7faff;
+}
+
+.add-timer-btn[disabled],
+.wifi-mode-btn[disabled],
+.sync-time-btn[disabled],
+.refresh-btn[disabled],
+.back-home-btn[disabled] {
+  opacity: 0.45;
+}
+
+.add-timer-btn,
+.wifi-mode-btn,
+.sync-time-btn,
+.refresh-btn,
+.back-home-btn,
+.confirm-btn,
+.cancel-btn,
+.delete-btn,
+.temp-button,
+.mode-select-btn,
+.speed-select-btn,
+.power-option,
+.timer-item {
+  transition: transform 0.12s ease-out, background 0.15s ease-out, opacity 0.15s ease-out;
+}
 </style>

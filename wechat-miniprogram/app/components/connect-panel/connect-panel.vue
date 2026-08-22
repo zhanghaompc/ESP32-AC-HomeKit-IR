@@ -565,4 +565,95 @@ export default {
     transform: rotate(360deg);
   }
 }
+
+/* ===== 方案一：精致蓝白（覆盖式优化） ===== */
+.conn-card {
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16rpx 40rpx rgba(37, 99, 235, 0.10);
+}
+
+.icon-ring.scanning,
+.icon-ring.connecting,
+.icon-ring.reconnecting {
+  animation: ring-breathe 1.3s ease-in-out infinite;
+}
+
+.m-btn.primary {
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  box-shadow: 0 12rpx 28rpx rgba(37, 99, 235, 0.26);
+}
+
+.recent-card,
+.device-row {
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12rpx 30rpx rgba(37, 99, 235, 0.08);
+}
+
+.recent-icon,
+.dev-icon {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  color: #2563eb;
+}
+
+.linklike {
+  color: #2563eb;
+}
+
+.error-banner {
+  border-radius: 18rpx;
+}
+
+@keyframes ring-breathe {
+  0%,
+  100% {
+    box-shadow: 0 10rpx 24rpx rgba(217, 119, 6, 0.18);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 10rpx 34rpx rgba(217, 119, 6, 0.36);
+    transform: scale(1.04);
+  }
+}
+
+/* ===== premium-ui-builder-skill：组件状态 ===== */
+.m-btn:active {
+  transform: scale(0.97);
+  opacity: 0.92;
+}
+
+.m-btn[disabled] {
+  opacity: 0.45;
+}
+
+.device-row:active,
+.recent-card:active {
+  background: #f0f6ff;
+  transform: scale(0.99);
+}
+
+.option:active {
+  background: #eef4ff;
+}
+
+.m-btn,
+.device-row,
+.recent-card,
+.option {
+  transition: transform 0.12s ease-out, background 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-ring.scanning,
+  .icon-ring.connecting,
+  .icon-ring.reconnecting {
+    animation: none;
+  }
+  .m-btn:active,
+  .device-row:active,
+  .recent-card:active {
+    transform: none;
+  }
+}
 </style>

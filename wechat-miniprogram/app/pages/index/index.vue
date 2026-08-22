@@ -1,13 +1,17 @@
 <template>
   <view class="container">
     <view class="header">
-      <text class="title">智能空调控制器</text>
+      <view>
+        <text class="title">智能空调</text>
+        <text class="subtitle">{{ currentDeviceName || 'ESP32 智能空调' }}</text>
+      </view>
       <view class="ble-status" :class="connPillClass">
         <text>{{ connPillText }}</text>
       </view>
     </view>
 
     <connect-panel
+      v-if="connState !== 'connected'"
       :state="connState"
       :device-list="deviceList"
       :saved-device="savedDevice"
@@ -23,118 +27,98 @@
       @open-settings="openSettings"
       @retry="handleRetry"
     />
+    <view v-else class="connected-bar">
+      <view class="connected-dot"></view>
+      <text class="connected-text">{{ currentDeviceName || '已连接' }}</text>
+      <text class="connected-action" @tap="disconnectBLE">断开</text>
+    </view>
 
-    <view class="sensor-display">
-      <view class="sensor-item temp">
-        <text class="sensor-icon">🌡️</text>
-        <text class="sensor-value">{{ temp || '--' }}°C</text>
-        <text class="sensor-label">环境温度</text>
+    <view class="ambient-row">
+      <text class="ambient-item">🌡️ {{ temp || '--' }}°C</text>
+      <text class="ambient-item">💧 {{ humidity || '--' }}%</text>
+      <text class="ambient-item link" @tap="queryCurrentProtocol">协议 {{ protocolList[protocolIndex] || '--' }}</text>
+    </view>
+
+    <view class="control-card">
+      <view class="power-row">
+        <view>
+          <text class="control-label">空调电源</text>
+          <text class="power-state" :class="isPowerOn ? 'on' : 'off'">
+            {{ isPowerOn ? '已开启' : '已关闭' }}
+          </text>
+        </view>
+        <view
+          class="switch"
+          :class="{ on: isPowerOn }"
+          :style="{ opacity: isConnected ? 1 : 0.4 }"
+          @tap="togglePower"
+        >
+          <view class="switch-knob"></view>
+        </view>
       </view>
-      <view class="sensor-item hum">
-        <text class="sensor-icon">💧</text>
-        <text class="sensor-value">{{ humidity || '--' }}%</text>
-        <text class="sensor-label">环境湿度</text>
+
+      <view class="divider"></view>
+
+      <view class="temp-row">
+        <button class="step-btn" :disabled="!isConnected" @tap="decreaseTemp">−</button>
+        <view class="temp-display">
+          <text class="temp-num">{{ targetTemp }}</text>
+          <text class="temp-unit">°C</text>
+        </view>
+        <button class="step-btn" :disabled="!isConnected" @tap="increaseTemp">+</button>
+      </view>
+
+      <view class="divider"></view>
+
+      <view class="seg-block">
+        <text class="control-label">模式</text>
+        <view class="seg">
+          <view
+            v-for="(item, index) in modeList"
+            :key="item"
+            class="seg-item"
+            :class="{ active: modeIndex === index }"
+            @tap="onModeChange(index)"
+          >{{ item }}</view>
+        </view>
+      </view>
+
+      <view class="seg-block">
+        <text class="control-label">风速</text>
+        <view class="seg">
+          <view
+            v-for="(item, index) in speedList"
+            :key="item"
+            class="seg-item"
+            :class="{ active: speedIndex === index }"
+            @tap="onSpeedChange(index)"
+          >{{ item }}</view>
+        </view>
+      </view>
+
+      <view class="divider"></view>
+
+      <view class="protocol-row" @tap="openProtocolPicker">
+        <text class="control-label">空调协议</text>
+        <view class="protocol-value">
+          <text>{{ protocolList[protocolIndex] || '未选择' }}</text>
+          <text class="chevron">›</text>
+        </view>
       </view>
     </view>
 
-    <button
-      class="power-button"
-      :class="isPowerOn ? 'power-on' : 'power-off'"
-      :disabled="!isConnected"
-      @tap="togglePower"
-    >
-      <text class="power-icon">{{ isPowerOn ? '⏻' : '⏼' }}</text>
-      <text>{{ isPowerOn ? '空调开启' : '空调关闭' }}</text>
-    </button>
-
-    <view class="section-title">空调设置</view>
-
-    <view class="settings-card">
-      <view class="form-group">
-        <text class="form-label">空调协议</text>
-        <view v-if="isConnected" class="form-control-row">
-          <view class="picker" @tap="openProtocolPicker">
-            <text class="picker-value">{{ protocolList[protocolIndex] || '未选择' }}</text>
-            <text class="picker-arrow">▾</text>
-          </view>
-          <text class="refresh-btn" :class="{ spinning: isLoading }" @tap.stop="queryCurrentProtocol">↻</text>
-        </view>
-        <view v-else class="picker">
-          <text class="picker-placeholder">请先连接设备</text>
-          <text class="picker-arrow">▾</text>
-        </view>
-      </view>
-
-      <view class="form-group">
-        <text class="form-label">运行模式</text>
-        <view v-if="isConnected" class="picker" @tap="openModePicker">
-          <text class="picker-value">{{ modeList[modeIndex] }}</text>
-          <text class="picker-arrow">▾</text>
-        </view>
-        <view v-else class="picker">
-          <text class="picker-placeholder">请先连接设备</text>
-          <text class="picker-arrow">▾</text>
-        </view>
-      </view>
-
-      <view class="form-group">
-        <text class="form-label">风速</text>
-        <view v-if="isConnected" class="picker" @tap="openSpeedPicker">
-          <text class="picker-value">{{ speedList[speedIndex] }}</text>
-          <text class="picker-arrow">▾</text>
-        </view>
-        <view v-else class="picker">
-          <text class="picker-placeholder">请先连接设备</text>
-          <text class="picker-arrow">▾</text>
-        </view>
-      </view>
-
-      <view class="form-group">
-        <text class="form-label">目标温度 (°C)</text>
-        <view v-if="isConnected" class="temp-control">
-          <button class="temp-button" @tap="decreaseTemp">−</button>
-          <text class="temp-value">{{ targetTemp }}</text>
-          <button class="temp-button" @tap="increaseTemp">+</button>
-        </view>
-        <view v-else class="picker">
-          <text class="picker-placeholder">请先连接设备</text>
-          <text class="picker-arrow">▾</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="buttons-group">
-      <button
-        class="action-button learning-button"
-        :disabled="!isConnected || isLearning"
-        @tap="startLearningMode"
-      >
-        {{ isLearning ? '学习中...' : '协议学习' }}
+    <view class="actions-row">
+      <button class="mini-btn learn" :disabled="!isConnected || isLearning" @tap="startLearningMode">
+        {{ isLearning ? '学习中…' : '协议学习' }}
       </button>
-      <button
-        class="action-button update-button"
-        :disabled="!isConnected"
-        @tap="sendSettings"
-      >
-        更新设置
-      </button>
+      <button class="mini-btn timer" :disabled="!isConnected" @tap="goToTimer">定时任务</button>
+      <button class="mini-btn danger" :disabled="!isConnected" @tap="factoryReset">恢复出厂设置</button>
     </view>
 
-    <button
-      class="timer-button"
-      :disabled="!isConnected"
-      @tap="goToTimer"
-    >
-      ⏰ 定时任务管理
-    </button>
-
-    <button
-      class="factory-reset-btn"
-      :disabled="!isConnected"
-      @tap="factoryReset"
-    >
-      ⚠️ 恢复出厂设置
-    </button>
+    <view class="footer-note">
+      <text>连接后自动校时 · 断线自动重连</text>
+      <text class="footer-sub">长按设备 BOOT 键 3 秒可恢复出厂设置</text>
+    </view>
 
     <view v-if="status" class="status-display" :class="statusType">
       {{ status }}
@@ -156,40 +140,6 @@
             </view>
           </view>
         </scroll-view>
-      </view>
-    </view>
-
-    <view v-if="showModePicker" class="modal-overlay" @tap="hideModePicker">
-      <view class="modal" @tap.stop="noop">
-        <view class="modal-header">选择运行模式</view>
-        <view class="modal-options">
-          <view
-            v-for="(item, index) in modeList"
-            :key="item"
-            class="option"
-            :class="{ selected: modeIndex === index }"
-            @tap="onModeChange(index)"
-          >
-            <text>{{ item }}</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <view v-if="showSpeedPicker" class="modal-overlay" @tap="hideSpeedPicker">
-      <view class="modal" @tap.stop="noop">
-        <view class="modal-header">选择风速</view>
-        <view class="modal-options">
-          <view
-            v-for="(item, index) in speedList"
-            :key="item"
-            class="option"
-            :class="{ selected: speedIndex === index }"
-            @tap="onSpeedChange(index)"
-          >
-            <text>{{ item }}</text>
-          </view>
-        </view>
       </view>
     </view>
 
@@ -306,6 +256,25 @@ export default {
         default:
           return '○ 未连接'
       }
+    },
+    currentDeviceName() {
+      if (!this.deviceId) return ''
+      const found = this.deviceList.find((d) => d.deviceId === this.deviceId)
+      return (found && (found.name || found.deviceId)) || this.savedDeviceName || ''
+    },
+    tempRingStyle() {
+      const t = parseFloat(this.temp)
+      let pct = 0
+      if (!isNaN(t)) {
+        pct = Math.min(100, Math.max(0, ((t - 17) / (30 - 17)) * 100))
+      }
+      return {
+        background: `conic-gradient(#2563eb ${pct}%, #e2e8f0 ${pct}% 100%)`
+      }
+    },
+    humPercent() {
+      const h = parseFloat(this.humidity)
+      return isNaN(h) ? 0 : Math.min(100, Math.max(0, h))
     }
   },
 
@@ -1614,5 +1583,557 @@ export default {
 .status-display.fail {
   background: #fef2f2;
   color: #b91c1c;
+}
+
+/* ===== 方案一：精致蓝白（覆盖式优化） ===== */
+.subtitle {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.sensor-item {
+  border-radius: 26rpx;
+  padding: 30rpx 12rpx;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 12rpx 30rpx rgba(37, 99, 235, 0.08);
+  border: 1rpx solid rgba(255, 255, 255, 0.9);
+}
+
+.sensor-item.temp {
+  background: linear-gradient(150deg, #f3f8ff, #ffffff 72%);
+}
+
+.sensor-item.hum {
+  background: linear-gradient(150deg, #eefaf8, #ffffff 72%);
+}
+
+.temp-ring {
+  width: 178rpx;
+  height: 178rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10rpx;
+}
+
+.temp-inner {
+  width: 150rpx;
+  height: 150rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 4rpx 14rpx rgba(37, 99, 235, 0.06);
+}
+
+.sensor-item .sensor-value {
+  font-size: 38rpx;
+}
+
+.hum-bar {
+  width: 150rpx;
+  height: 12rpx;
+  border-radius: 999rpx;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-top: 8rpx;
+}
+
+.hum-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: linear-gradient(90deg, #22d3ee, #0ea5e9);
+}
+
+.power-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 26rpx 0 30rpx;
+}
+
+.power-circle {
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.power-circle .power-icon {
+  font-size: 74rpx;
+}
+
+.power-circle.power-on {
+  background: radial-gradient(circle at 35% 30%, #34d399, #059669 70%);
+  box-shadow: 0 18rpx 46rpx rgba(5, 150, 105, 0.34);
+}
+
+.power-circle.power-off {
+  background: radial-gradient(circle at 35% 30%, #94a3b8, #64748b 70%);
+  box-shadow: 0 18rpx 46rpx rgba(100, 116, 139, 0.26);
+}
+
+.power-circle[disabled] {
+  opacity: 0.55;
+}
+
+.power-label {
+  margin-top: 18rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #334155;
+}
+
+.section-title {
+  color: #172033;
+}
+
+.section-title::before {
+  background: linear-gradient(180deg, #2563eb, #22d3ee);
+}
+
+.settings-card {
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 14rpx 36rpx rgba(37, 99, 235, 0.08);
+}
+
+.form-group {
+  padding: 26rpx 0;
+}
+
+.form-label {
+  color: #64748b;
+}
+
+.picker {
+  border-radius: 18rpx;
+  background: #f4f8ff;
+}
+
+.refresh-btn {
+  color: #2563eb;
+}
+
+.action-button {
+  border-radius: 24rpx;
+}
+
+.learning-button {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 12rpx 26rpx rgba(245, 158, 11, 0.24);
+}
+
+.update-button {
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  box-shadow: 0 12rpx 26rpx rgba(37, 99, 235, 0.24);
+}
+
+.timer-button {
+  color: #2563eb;
+  background: linear-gradient(135deg, #ffffff, #e8f2ff);
+  border: 1rpx solid rgba(37, 99, 235, 0.2);
+  border-radius: 24rpx;
+}
+
+.factory-reset-btn {
+  border-radius: 24rpx;
+}
+
+.status-display {
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.08);
+}
+
+/* ===== premium-ui-builder-skill：层级、状态、动效 ===== */
+.settings-summary {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 28rpx;
+}
+
+.summary-chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  padding: 22rpx 8rpx;
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  border: 1rpx solid var(--c-border);
+  box-shadow: var(--shadow-card);
+}
+
+.summary-label {
+  font-size: 22rpx;
+  color: var(--c-muted);
+}
+
+.summary-value {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.section-title {
+  margin: 8rpx 0 20rpx;
+}
+
+.picker:active {
+  background: #e8f0ff;
+}
+
+.power-circle:active {
+  transform: scale(0.96);
+}
+
+.action-button:active,
+.timer-button:active,
+.factory-reset-btn:active {
+  transform: scale(0.97);
+  opacity: 0.92;
+}
+
+.action-button[disabled],
+.timer-button[disabled],
+.factory-reset-btn[disabled],
+.power-circle[disabled] {
+  opacity: 0.45;
+}
+
+.power-circle {
+  transition: transform 0.12s ease-out;
+}
+
+.action-button,
+.timer-button,
+.factory-reset-btn,
+.picker {
+  transition: transform 0.12s ease-out, background 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .power-circle:active,
+  .action-button:active,
+  .timer-button:active,
+  .factory-reset-btn:active {
+    transform: none;
+  }
+}
+
+/* ===== HomeKit 风格：紧凑控制面板 ===== */
+.container {
+  padding: 24rpx 24rpx 60rpx;
+}
+
+.title {
+  font-size: 46rpx;
+}
+
+.subtitle {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: var(--c-muted);
+  font-weight: 400;
+}
+
+.connected-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 18rpx 22rpx;
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  border: 1rpx solid var(--c-border);
+  box-shadow: var(--shadow-card);
+}
+
+.connected-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--c-success);
+}
+
+.connected-text {
+  flex: 1;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.connected-action {
+  font-size: 24rpx;
+  color: var(--c-error);
+}
+
+.ambient-row {
+  display: flex;
+  justify-content: center;
+  gap: 34rpx;
+  padding: 22rpx 0 26rpx;
+}
+
+.ambient-item {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--c-muted);
+}
+
+.ambient-item.link {
+  color: var(--c-primary);
+}
+
+.control-card {
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  border: 1rpx solid var(--c-border);
+  box-shadow: var(--shadow-card);
+  padding: 14rpx 30rpx;
+}
+
+.power-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 0;
+}
+
+.control-label {
+  display: block;
+  font-size: 24rpx;
+  color: var(--c-muted);
+}
+
+.power-state {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.power-state.on {
+  color: var(--c-success);
+}
+
+.power-state.off {
+  color: var(--c-muted);
+}
+
+.switch {
+  width: 96rpx;
+  height: 56rpx;
+  border-radius: 999rpx;
+  background: #e4e4e7;
+  padding: 4rpx;
+  transition: background 0.2s ease-out;
+}
+
+.switch.on {
+  background: #34c759;
+}
+
+.switch-knob {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.18);
+  transition: transform 0.2s ease-out;
+}
+
+.switch.on .switch-knob {
+  transform: translateX(40rpx);
+}
+
+.divider {
+  height: 1rpx;
+  background: var(--c-border);
+}
+
+.temp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 30rpx 8rpx;
+}
+
+.temp-display {
+  display: flex;
+  align-items: baseline;
+}
+
+.temp-num {
+  font-size: 108rpx;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--c-text);
+}
+
+.temp-unit {
+  font-size: 40rpx;
+  font-weight: 400;
+  color: var(--c-muted);
+  margin-left: 6rpx;
+}
+
+.step-btn {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  background: #f0f0f3;
+  color: var(--c-text);
+  font-size: 48rpx;
+  line-height: 100rpx;
+  padding: 0;
+  text-align: center;
+}
+
+.step-btn:active {
+  background: #e2e2e7;
+}
+
+.step-btn[disabled] {
+  opacity: 0.4;
+}
+
+.seg-block {
+  padding: 24rpx 0;
+}
+
+.seg-block .control-label {
+  margin-bottom: 14rpx;
+}
+
+.seg {
+  display: flex;
+  background: #ececf1;
+  border-radius: 14rpx;
+  padding: 6rpx;
+}
+
+.seg-item {
+  flex: 1;
+  text-align: center;
+  font-size: 26rpx;
+  color: var(--c-muted);
+  padding: 16rpx 0;
+  border-radius: 10rpx;
+  transition: background 0.15s ease-out, color 0.15s ease-out;
+}
+
+.seg-item.active {
+  background: #ffffff;
+  color: var(--c-text);
+  font-weight: 600;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+}
+
+.protocol-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 0;
+}
+
+.protocol-value {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.chevron {
+  font-size: 32rpx;
+  color: var(--c-muted);
+}
+
+.actions-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.mini-btn {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1rpx solid var(--c-border);
+  border-radius: var(--r-md);
+  line-height: 2.8;
+  transition: transform 0.12s ease-out, opacity 0.15s ease-out;
+}
+
+.mini-btn.danger {
+  color: var(--c-error);
+}
+
+.mini-btn.learn {
+  color: #ffffff;
+  border: none;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 10rpx 24rpx rgba(245, 158, 11, 0.26);
+}
+
+.mini-btn.timer {
+  color: #ffffff;
+  border: none;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  box-shadow: 0 10rpx 24rpx rgba(37, 99, 235, 0.26);
+}
+
+.mini-btn.danger {
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1rpx solid #fecaca;
+}
+
+.mini-btn:active {
+  transform: scale(0.97);
+}
+
+.mini-btn[disabled] {
+  opacity: 0.4;
+}
+
+.footer-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: 36rpx;
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.footer-note .footer-sub {
+  font-size: 20rpx;
+  color: #c2c8d0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-knob,
+  .switch,
+  .seg-item {
+    transition: none;
+  }
+  .mini-btn:active,
+  .step-btn:active {
+    transform: none;
+  }
 }
 </style>
