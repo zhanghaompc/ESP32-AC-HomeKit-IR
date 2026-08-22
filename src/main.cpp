@@ -72,6 +72,25 @@ IRrecv irrecv(kRecvPin, kCaptureBufferSize, kTimeout, true);
 decode_results results;
 IRac ac(kIrLed);
 
+// 红外接收器状态：防止重复 enableIRIn() 导致 ESP32 定时器/ISR 重复注册失败
+bool irReceiverEnabled = false;
+
+void irEnableRecv()
+{
+  if (irReceiverEnabled) return;
+  irrecv.enableIRIn();
+  irReceiverEnabled = true;
+  DBG("[IR] 红外接收已开启 (GPIO %d)\n", kRecvPin);
+}
+
+void irDisableRecv()
+{
+  if (!irReceiverEnabled) return;
+  irrecv.disableIRIn();
+  irReceiverEnabled = false;
+  DBG("[IR] 红外接收已关闭\n");
+}
+
 bool wifiConnected = false;
 bool shouldSaveConfig = false;
 #ifndef BLE_ONLY
@@ -714,7 +733,8 @@ void Web_set()
             {
     Serial.println("开始协议学习...");
     ledManager.blinkPurple(); // 学习模式：紫灯亮
-    irrecv.enableIRIn(); // 学习期间开启红外接收
+    bool wasRecvEnabled = irReceiverEnabled; // 记录学习前状态，学习后恢复
+    irEnableRecv(); // 学习期间开启红外接收（已开启则跳过，避免重复初始化）
 
     unsigned long startTime = millis();
     String detectedProtocol_web = "";
@@ -724,7 +744,7 @@ void Web_set()
       delay(100);
     }
 
-    irrecv.disableIRIn(); // 学习结束关闭红外接收
+    if (!wasRecvEnabled) irDisableRecv(); // 学习前未开启则恢复关闭
     ledManager.off(); // 学习结束：紫灯关闭
 
     if (!detectedProtocol_web.isEmpty()) {
@@ -837,8 +857,7 @@ void setup()
 
   // 详细日志开启时同时开启红外接收解析（串口打印收到的红外信号）
 #ifdef DEBUG_LOG
-  irrecv.enableIRIn();
-  DBG("[IR] 红外接收已开启 (GPIO %d)\n", kRecvPin);
+  irEnableRecv();
 #else
   // 平时不开启红外接收器（默认关闭，省 CPU），协议学习时再 enableIRIn/disableIRIn
 #endif
@@ -907,7 +926,7 @@ void loop()
     requestFactoryReset = false;
     factoryReset();
   }
-   IRrecvDump(); // 详细日志模式下解析并打印收到的红外信号
+  if (irReceiverEnabled) IRrecvDump(); // 接收器开启时才解析并打印红外信号
 #ifndef BLE_ONLY
   handleBootButton();
 
