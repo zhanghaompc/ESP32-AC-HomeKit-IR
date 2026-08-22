@@ -14,6 +14,7 @@
 #include <Ticker.h>
 #endif
 #include <SPIFFS.h>
+#include "nvs_flash.h"
 #ifndef BLE_ONLY
 #include <homespan.h>
 #endif
@@ -53,6 +54,7 @@ unsigned long pressStartTime = 0;
 bool isSwitching = false;
 bool requestSwitchToWiFi = false;
 bool requestSwitchToBLE = false;
+bool requestFactoryReset = false;
 
 // 环境数据缓存
 float envTemperature = 25.0;
@@ -222,7 +224,6 @@ void checkWiFiConnection();
 void Web_set();
 void key_init();
 void key_scan();
-void handleCommand(String command);
 void IRrecvDump(void);
 void AC_SET_DATA(int temp, int speed, int mode, bool power = true);
 
@@ -313,6 +314,18 @@ String handleIrReceiving()
   return "";
 }
 
+// 恢复出厂设置：清除 HomeKit 配对、WiFi 凭据、SPIFFS（协议/定时任务），然后重启
+void factoryReset()
+{
+  Serial.println("*** 恢复出厂设置：清除 HomeKit 配对 / WiFi / 定时任务 ***");
+  ledManager.blinkWhite(); // 恢复出厂 = 白色闪烁
+  delay(200);
+  nvs_flash_erase(); // 清掉 HomeSpan 的配对、WiFi 等全部 NVS 数据
+  SPIFFS.format();   // 清掉协议和定时任务
+  delay(200);
+  ESP.restart();
+}
+
 #ifndef BLE_ONLY
 // WiFi关闭函数（保持不变）
 void disableWiFi()
@@ -332,6 +345,7 @@ void handleBootButton()
 {
   static bool lastKeyState = HIGH;
   static unsigned long lastDebounceTime = 0;
+  static bool longPressPending = false;  // 超过短按时长、还没到重置时长的长按状态
   const unsigned long debounceDelay = 50;
 
   int currentKeyState = digitalRead(KEY);
@@ -352,7 +366,24 @@ void handleBootButton()
       {
         buttonPressed = true;
         pressStartTime = currentTime;
+        longPressPending = false;
         Serial.println("按键已按下");
+      }
+      else if (buttonPressed && !isSwitching)
+      {
+        // 按住不放：1.5s 后黄灯提示“即将重置”，3s 触发恢复出厂
+        unsigned long holdTime = currentTime - pressStartTime;
+        if (holdTime >= 1500 && !longPressPending)
+        {
+          longPressPending = true;
+          ledManager.setColor(CRGB::Yellow);
+          Serial.println("长按中：继续按住将恢复出厂设置");
+        }
+        if (holdTime >= 3000)
+        {
+          Serial.println("长按触发：恢复出厂设置");
+          factoryReset();
+        }
       }
     }
     else
@@ -362,6 +393,20 @@ void handleBootButton()
         buttonPressed = false;
         unsigned long pressDuration = currentTime - pressStartTime;
         Serial.printf("按键释放，按压时长: %lu ms\n", pressDuration);
+
+        if (longPressPending)
+        {
+          // 在 1.5~3s 之间松手：取消重置，恢复模式指示灯
+          longPressPending = false;
+          if (isWiFiMode)
+            ledManager.setColor(CRGB::Green);
+          else if (bleManager.isConnected())
+            ledManager.setColor(CRGB::Cyan); // BLE 已连接 = 青色常亮
+          else
+            ledManager.blinkBlue();
+          Serial.println("长按已取消");
+          return;
+        }
 
         if (pressDuration >= 100 && pressDuration < 1500 && !isSwitching)
         {
@@ -483,6 +528,7 @@ struct DEV_AC : Service::Thermostat
 
     thermostatMode = new Characteristic::TargetHeatingCoolingState(0);
     currentState = new Characteristic::CurrentHeatingCoolingState(0);
+    new Characteristic::TemperatureDisplayUnits(0); // 0=摄氏度，必须属于恒温器服务
 
     Service::Fan *fan = new Service::Fan();
     new Characteristic::Active();
@@ -527,7 +573,6 @@ struct DEV_AC : Service::Thermostat
     const char *hkModeNames[] = {"关闭", "制热", "制冷", "自动"};
     const char *speedNames[] = {"自动", "固定", "低速", "中速", "高速"};
 
-    int finalSpeed = (hkMode == 3) ? 0 : acSpeed;
     int hkMode_get = 0;
 
     if (hkMode == 0)
@@ -547,7 +592,15 @@ struct DEV_AC : Service::Thermostat
       hkMode_get = static_cast<int>(stdAc::opmode_t::kAuto);
     }
 
-    irManager.send(acTargetTemp, acSpeed, hkMode_get);
+    // HomeKit “关闭”时真正发送 power=false，避免“开机+模式=关闭”的无效组合
+    bool powerOn = (hkMode != 0);
+    int sendMode = hkMode_get;
+    if (!powerOn)
+    {
+      sendMode = static_cast<int>(ac.next.mode);
+    }
+    int sendSpeed = (hkMode == 3) ? 0 : acSpeed;
+    irManager.send(acTargetTemp, sendSpeed, sendMode, powerOn);
     Serial.println("============================");
     return true;
   }
@@ -727,35 +780,6 @@ void key_scan()
 #endif
 }
 
-// 命令处理（保持不变）
-void handleCommand(String command)
-{
-  if (command == "off")
-  {
-    ac.next.power = false;
-    Serial.println("关闭空调。");
-    ac.sendAc();
-  }
-  else if (command == "on")
-  {
-    ac.next.power = true;
-    Serial.println("打开空调。");
-    ac.sendAc();
-  }
-  else if (command == "2")
-  {
-    Serial.println("已停止播放");
-  }
-  else if (command == "3")
-  {
-    Serial.println("上一首");
-  }
-  else if (command == "4")
-  {
-    Serial.println("下一首");
-  }
-}
-
 // 红外接收打印（保持不变）
 void IRrecvDump(void)
 {
@@ -806,7 +830,13 @@ void setup()
   irManager.begin();
   sensorManager.begin();
 
+  // 详细日志开启时同时开启红外接收解析（串口打印收到的红外信号）
+#ifdef DEBUG_LOG
+  irrecv.enableIRIn();
+  DBG("[IR] 红外接收已开启 (GPIO %d)\n", kRecvPin);
+#else
   // 平时不开启红外接收器（默认关闭，省 CPU），协议学习时再 enableIRIn/disableIRIn
+#endif
 
   // 其他初始化
   if (!SPIFFS.begin(true))
@@ -848,7 +878,6 @@ void setup()
   new Characteristic::Identify();
   new DEV_AC(15);
   new DEV_MODE_SWITCH();
-  new Characteristic::TemperatureDisplayUnits(0); // 0=摄氏度，必须添加
 #endif
 
   // 默认启动BLE模式
@@ -868,6 +897,12 @@ void sendEnvironmentDataIfNeeded()
 void loop()
 {
   delay(50);
+  if (requestFactoryReset)
+  {
+    requestFactoryReset = false;
+    factoryReset();
+  }
+   IRrecvDump(); // 详细日志模式下解析并打印收到的红外信号
 #ifndef BLE_ONLY
   handleBootButton();
 
@@ -878,7 +913,7 @@ void loop()
     bleManager.disable();
     isBLEMode = false;
     isWiFiMode = true;
-    ledManager.setColor(CRGB::Green);
+    ledManager.blinkGreen(); // WiFi 等待连接 = 绿色闪烁
     delay(300);
     wifiManager.enable();
     timerManager.syncTime();
@@ -913,6 +948,9 @@ void loop()
     timerManager.loop();
 #endif
   }
+#ifdef DEBUG_LOG
+  // IRrecvDump(); // 详细日志模式下解析并打印收到的红外信号
+#endif
   irManager.loop();
   sensorManager.loop();
   ledManager.update();

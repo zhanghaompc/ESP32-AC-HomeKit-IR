@@ -15,6 +15,7 @@ extern LedManager ledManager;
 extern IrManager irManager;
 extern TimerManager timerManager;
 extern bool requestSwitchToWiFi;
+extern bool requestFactoryReset;
 extern bool isBLEMode;
 extern IRrecv irrecv;
 bool updateProtocolFromString(const String &, decode_type_t &);
@@ -33,7 +34,7 @@ public:
         parent->deviceConnected = true;
         Serial.println("BLE客户端已连接");
         ledManager.stopBlink();
-        ledManager.setColor(CRGB::Blue);
+        ledManager.setColor(CRGB::Cyan); // BLE 已连接 = 青色常亮
         pServer->getAdvertising()->stop(); // 连接后停止广播，省电且更规范
         parent->sendTempHumidity(envTemperature, enHumidity);
         parent->sendProtocol(lastProtocolName);
@@ -236,7 +237,7 @@ void BleManager::handleCommand(const String &command)
 
         int temp = command.substring(5, idx1).toInt();
         int mode = command.substring(idx1 + 6, idx2).toInt();
-        int speed = command.substring(idx2 + 6, idx3).toInt();
+        int speed = command.substring(idx2 + 7, idx3).toInt();
 
         ac.next.power = true;
         irManager.send(temp, speed, mode, true);
@@ -485,6 +486,15 @@ void BleManager::handleCommand(const String &command)
         giveMutex();
         return;
 #endif
+    }
+
+    // 恢复出厂设置（清除 HomeKit 配对 / WiFi / 定时任务）
+    if (command == "reset_factory")
+    {
+        sendChunked("reset=ok");
+        giveMutex();
+        requestFactoryReset = true;
+        return;
     }
 
     // 未知命令

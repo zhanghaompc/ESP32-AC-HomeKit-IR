@@ -1,0 +1,13 @@
+{
+  "condition": {
+    "miniprogram": {
+      "list": [
+        {
+          "query": "",
+          "scene": null,
+          "launchMode": "default"
+        }
+      ]
+    }
+  }
+}

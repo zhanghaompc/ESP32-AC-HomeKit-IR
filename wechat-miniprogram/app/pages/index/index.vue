@@ -128,6 +128,14 @@
       ⏰ 定时任务管理
     </button>
 
+    <button
+      class="factory-reset-btn"
+      :disabled="!isConnected"
+      @tap="factoryReset"
+    >
+      ⚠️ 恢复出厂设置
+    </button>
+
     <view v-if="status" class="status-display" :class="statusType">
       {{ status }}
     </view>
@@ -1215,6 +1223,25 @@ export default {
       uni.navigateTo({ url: '/pages/timer/timer' })
     },
 
+    factoryReset() {
+      if (!this.isConnected) {
+        this.showStatus('请先连接设备', 'fail')
+        return
+      }
+      uni.showModal({
+        title: '恢复出厂设置',
+        content: '将清除 HomeKit 配对、WiFi 配置和所有定时任务，设备会重启。确定继续吗？',
+        confirmText: '确定重置',
+        confirmColor: '#dc2626',
+        success: (res) => {
+          if (res.confirm) {
+            this.enqueueCommand('reset_factory', this.rxCharId)
+            this.showStatus('已发送重置指令，设备即将重启', '')
+          }
+        }
+      })
+    },
+
     scheduleReconnect() {
       this.clearReconnectTimer()
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -1558,6 +1585,15 @@ export default {
   color: #2563eb;
   background: linear-gradient(135deg, #ffffff, #e8f1ff);
   border: 1rpx solid rgba(58, 123, 213, 0.25);
+}
+
+.factory-reset-btn {
+  margin-top: 18rpx;
+  color: #dc2626;
+  background: #fef2f2;
+  border-radius: 22rpx;
+  font-size: 28rpx;
+  line-height: 2.4;
 }
 
 .status-display {

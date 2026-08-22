@@ -12,7 +12,6 @@ extern IRac ac;
 extern bool isBLEMode;
 extern bool isWiFiMode;
 extern BleManager bleManager;
-bool updateProtocolFromString(const String &protocolName, decode_type_t &targetProtocol);
 
 static int pendingTemp = 25;
 static int pendingSpeed = 2;
@@ -42,7 +41,6 @@ void irTaskFunction(void *parameter)
             ledManager.stopBlink();
             ledManager.setColor(CRGB::Red);
 
-            updateProtocolFromString(lastProtocolName, ac.next.protocol);
             ac.next.degrees = temp;
             ac.next.fanspeed = (stdAc::fanspeed_t)speed;
             ac.next.mode = (stdAc::opmode_t)mode;
@@ -70,7 +68,7 @@ void irTaskFunction(void *parameter)
             {
                 if (bleManager.isConnected())
                 {
-                    ledManager.setColor(CRGB::Blue);
+                    ledManager.setColor(CRGB::Cyan); // BLE 已连接 = 青色常亮
                 }
                 else
                 {
@@ -95,7 +93,7 @@ void IrManager::begin()
         "IR_Tx_Task",
         4096 + 1028,
         NULL,
-        1,
+        2,
         &irTaskHandle,
         1);
     Serial.println("红外发射任务已启动");

@@ -4,7 +4,7 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <BLE2902.h> // 修复缺失头文件
+#include <BLE2902.h> 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <FastLED.h>

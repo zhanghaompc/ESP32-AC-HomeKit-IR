@@ -74,9 +74,7 @@ void WifiManagerEx::connectWiFi()
         wifiConnected = true;
         syncHomeSpanWifi();
         ledManager.stopBlink();
-        ledManager.setColor(CRGB::Green);
-        delay(500);
-        ledManager.off();
+        ledManager.setColor(CRGB::Green); // WiFi 已连接 = 绿色常亮
         Serial.printf("\nWiFi连接成功！IP: %s:8080\n", WiFi.localIP().toString().c_str());
         timerManager.syncTime();
     }
@@ -130,9 +128,7 @@ void WifiManagerEx::checkWiFiConnection()
             wifiConnected = true;
             syncHomeSpanWifi();
             ledManager.stopBlink();
-            ledManager.setColor(CRGB::Green);
-            delay(500);
-            ledManager.off();
+            ledManager.setColor(CRGB::Green); // WiFi 已连接 = 绿色常亮
             Serial.printf("WiFi已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
             timerManager.syncTime();
         }

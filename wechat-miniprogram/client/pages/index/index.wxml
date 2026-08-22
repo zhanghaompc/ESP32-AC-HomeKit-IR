@@ -1,38 +1,45 @@
 <view class="container mode-{{modeIndex}} {{isPowerOn ? 'power-on' : 'power-off'}}">
-  <!-- 头部简化：标题 + 蓝牙状态胶囊 -->
-  <view class="header">
-    <view class="header-left">
-      <text class="title">智能空调</text>
-      <view class="device-chip" wx:if="{{currentDeviceName && isConnected}}" bindtap="showDevicePicker">
-        <text class="device-name">{{currentDeviceName}}</text>
-        <i class="fas fa-chevron-down"></i>
+  <view class="status-plate">
+    <view class="header">
+      <view class="header-left">
+        <text class="eyebrow">AC CONTROL</text>
+        <text class="title">智能空调</text>
+      </view>
+      <view class="ble-pill {{isConnected ? 'connected' : 'disconnected'}}" bindtap="toggleConnection">
+        <i class="fas fa-bluetooth"></i>
+        <text>{{isConnected ? '已连接' : '连接设备'}}</text>
       </view>
     </view>
-    <view class="header-right">
-      <view class="ble-pill {{isConnected ? 'connected' : 'disconnected'}}" bindtap="{{isConnected ? 'disconnectBLE' : 'manualConnect'}}">
-        <i class="fas fa-bluetooth"></i>
-        <text>{{isConnected ? '已连接' : '连接'}}</text>
+
+    <view class="device-row">
+      <view class="device-copy">
+        <text class="device-label">{{isConnected ? '当前设备' : '设备状态'}}</text>
+        <text class="device-name">{{isConnected ? currentDeviceName : '等待连接 ESP32 空调模块'}}</text>
+      </view>
+      <view class="device-action" wx:if="{{isConnected && deviceList.length > 1}}" bindtap="showDevicePicker">
+        <text>切换</text>
+        <i class="fas fa-chevron-down"></i>
       </view>
     </view>
   </view>
 
-  <!-- 未连接空状态 -->
   <view class="empty-state" wx:if="{{!isConnected}}">
-    <view class="empty-illustration">
-      <view class="empty-circle">
-        <i class="fas fa-bluetooth-b empty-icon"></i>
-      </view>
+    <view class="empty-device">
+      <i class="fas fa-bluetooth-b"></i>
     </view>
-    <text class="empty-title">连接你的智能空调</text>
-    <text class="empty-desc">请打开蓝牙并靠近 ESP32 设备，点击下方按钮开始搜索</text>
+    <text class="empty-title">连接空调控制器</text>
+    <text class="empty-desc">打开手机蓝牙并靠近 ESP32 设备，搜索到设备后会自动完成连接。</text>
     <button class="primary-btn" bindtap="manualConnect" loading="{{isLoading}}">
       <i class="fas fa-search"></i>
-      <text>搜索并连接设备</text>
+      <text>{{isLoading ? '正在搜索' : '搜索设备'}}</text>
     </button>
+
     <view class="device-list-mini" wx:if="{{deviceList.length > 0}}">
-      <view class="mini-device-item" 
-            wx:for="{{deviceList}}" wx:key="deviceId"
-            bindtap="onDeviceChange" data-device-id="{{item.deviceId}}">
+      <view class="mini-device-item"
+            wx:for="{{deviceList}}"
+            wx:key="deviceId"
+            bindtap="onDeviceChange"
+            data-device-id="{{item.deviceId}}">
         <i class="fas fa-microchip"></i>
         <text class="mini-name">{{item.name || item.deviceId}}</text>
         <view class="rssi-signal">
@@ -42,80 +49,87 @@
     </view>
   </view>
 
-  <!-- 已连接主控制区 -->
   <block wx:if="{{isConnected}}">
-    <!-- 温度圆盘（视觉核心） -->
-    <view class="dial-wrapper">
-      <view class="temperature-dial {{!isPowerOn ? 'dial-off' : ''}}">
-        <!-- 外环进度（17-30°C 映射为百分比） -->
-        <view class="dial-ring">
-          <view class="dial-progress" style="width: {{(targetTemp - 17) / (30 - 17) * 100}}%"></view>
-        </view>
-        <!-- 中心内容 -->
-        <view class="dial-center">
-          <view class="mode-icon-row">
-            <text class="mode-icon">{{['❄️','🌬️','☀️','💧','🌀'][modeIndex]}}</text>
+    <view class="control-panel">
+      <view class="dial-wrapper">
+        <view class="temperature-dial {{!isPowerOn ? 'dial-off' : ''}}">
+          <view class="dial-ring">
+            <view class="dial-progress" style="width: {{(targetTemp - 17) / (30 - 17) * 100}}%"></view>
           </view>
-          <view class="temp-display">
-            <text class="temp-num">{{targetTemp}}</text>
-            <text class="temp-unit">°C</text>
+          <view class="dial-center">
+            <text class="mode-mark">{{['自','冷','热','湿','风'][modeIndex]}}</text>
+            <view class="temp-display">
+              <text class="temp-num">{{targetTemp}}</text>
+              <text class="temp-unit">°C</text>
+            </view>
+            <text class="mode-label">{{isPowerOn ? modeList[modeIndex] + ' · ' + speedList[speedIndex] : '设备已关闭'}}</text>
           </view>
-          <view class="mode-label">{{modeList[modeIndex]}} · {{speedList[speedIndex]}}</view>
-        </view>
-        <!-- 温度加减按钮 -->
-        <view class="dial-controls">
-          <view class="dial-btn minus" bindtap="decreaseTemp" disabled="{{!isPowerOn || isSending}}">
-            <text>−</text>
-          </view>
-          <view class="dial-btn plus" bindtap="increaseTemp" disabled="{{!isPowerOn || isSending}}">
-            <text>+</text>
+          <view class="dial-controls">
+            <view class="dial-btn" bindtap="decreaseTemp">
+              <text>−</text>
+            </view>
+            <view class="dial-btn" bindtap="increaseTemp">
+              <text>+</text>
+            </view>
           </view>
         </view>
       </view>
-    </view>
 
-    <!-- 温度快速步进器 -->
-    <view class="temp-stepper" wx:if="{{isPowerOn}}">
-      <view class="stepper-item" 
-            wx:for="{{tempQuickList}}" wx:key="temp"
-            bindtap="quickSetTemp" data-temp="{{item.temp}}"
-            class="{{item.temp === targetTemp ? 'active' : ''}}">
-        <text>{{item.temp}}°</text>
+      <view class="temp-stepper" wx:if="{{isPowerOn}}">
+        <view class="stepper-item"
+              wx:for="{{tempQuickList}}"
+              wx:key="temp"
+              bindtap="quickSetTemp"
+              data-temp="{{item.temp}}"
+              class="{{item.temp === targetTemp ? 'active' : ''}}">
+          <text>{{item.temp}}°</text>
+        </view>
       </view>
     </view>
 
-    <!-- 模式分段控件 -->
-    <view class="segment-control mode-segment">
-      <view class="segment-item" 
-            wx:for="{{modeList}}" wx:key="index"
-            bindtap="quickSetMode" data-index="{{index}}"
-            class="{{index === modeIndex && isPowerOn ? 'active' : ''}} {{!isPowerOn ? 'disabled' : ''}}">
-        <text class="seg-icon">{{['❄️','🌬️','☀️','💧','🌀'][index]}}</text>
-        <text class="seg-text">{{item}}</text>
+    <view class="section-block">
+      <view class="section-head">
+        <text>运行模式</text>
+      </view>
+      <view class="segment-control mode-segment">
+        <view class="segment-item"
+              wx:for="{{modeList}}"
+              wx:key="index"
+              bindtap="quickSetMode"
+              data-index="{{index}}"
+              class="{{index === modeIndex && isPowerOn ? 'active' : ''}} {{!isPowerOn ? 'disabled' : ''}}">
+          <text class="seg-icon">{{['自','冷','热','湿','风'][index]}}</text>
+          <text class="seg-text">{{item}}</text>
+        </view>
       </view>
     </view>
 
-    <!-- 风速分段控件 -->
-    <view class="segment-control speed-segment" wx:if="{{isPowerOn}}">
-      <view class="segment-item" 
-            wx:for="{{speedList}}" wx:key="index"
-            bindtap="quickSetSpeed" data-index="{{index}}"
-            class="{{index === speedIndex ? 'active' : ''}}">
-        <text class="seg-bars">
-          <text class="bar {{index >= 0 ? 'on' : ''}}">▁</text>
-          <text class="bar {{index >= 1 ? 'on' : ''}}">▃</text>
-          <text class="bar {{index >= 2 ? 'on' : ''}}">▅</text>
-          <text class="bar {{index >= 3 ? 'on' : ''}}">█</text>
-        </text>
-        <text class="seg-text">{{item}}</text>
+    <view class="section-block" wx:if="{{isPowerOn}}">
+      <view class="section-head">
+        <text>风速</text>
+      </view>
+      <view class="segment-control speed-segment">
+        <view class="segment-item"
+              wx:for="{{speedList}}"
+              wx:key="index"
+              bindtap="quickSetSpeed"
+              data-index="{{index}}"
+              class="{{index === speedIndex ? 'active' : ''}}">
+          <text class="seg-bars">
+            <text class="bar {{index >= 0 ? 'on' : ''}}"></text>
+            <text class="bar {{index >= 1 ? 'on' : ''}}"></text>
+            <text class="bar {{index >= 2 ? 'on' : ''}}"></text>
+            <text class="bar {{index >= 3 ? 'on' : ''}}"></text>
+          </text>
+          <text class="seg-text">{{item}}</text>
+        </view>
       </view>
     </view>
 
-    <!-- 协议选择卡片 -->
     <view class="protocol-card">
       <view class="card-row" bindtap="showProtocolPicker">
         <view class="card-left">
-          <view class="card-icon protocol-ico">
+          <view class="card-icon">
             <i class="fas fa-microchip"></i>
           </view>
           <view class="card-texts">
@@ -129,66 +143,62 @@
       </view>
     </view>
 
-    <!-- 环境信息条 -->
     <view class="env-bar">
       <view class="env-item">
-        <i class="fas fa-thermometer-half"></i>
         <text class="env-val">{{temp || '--'}}°</text>
         <text class="env-lbl">室内温度</text>
       </view>
       <view class="env-divider"></view>
       <view class="env-item">
-        <i class="fas fa-tint"></i>
         <text class="env-val">{{humidity || '--'}}%</text>
         <text class="env-lbl">相对湿度</text>
       </view>
       <view class="env-divider"></view>
       <view class="env-item">
-        <view class="rssi-signal inline-signal">
-          <view class="signal-bar {{deviceRSSI > -50 ? 's4' : deviceRSSI > -60 ? 's3' : deviceRSSI > -70 ? 's2' : 's1'}}"></view>
-        </view>
         <text class="env-val">{{deviceRSSI || '--'}}</text>
         <text class="env-lbl">信号强度</text>
       </view>
     </view>
   </block>
 
-  <!-- 底部 FAB 电源按钮 + 导航 -->
   <view class="bottom-dock {{!isConnected ? 'only-timer' : ''}}">
-    <view class="dock-icon-btn" bindtap="goToTimer" disabled="{{!isConnected}}">
+    <view class="dock-icon-btn" bindtap="goToTimer">
       <i class="fas fa-clock"></i>
       <text>定时</text>
     </view>
-
-    <!-- 电源 FAB -->
-    <view class="power-fab {{isPowerOn ? 'on' : 'off'}} {{isSending ? 'sending' : ''}}" 
-          bindtap="togglePower"
-          disabled="{{!isConnected}}">
+    <view class="power-fab {{isPowerOn ? 'on' : 'off'}} {{isSending ? 'sending' : ''}}"
+          bindtap="togglePower">
       <view class="power-ring"></view>
       <i class="fas fa-power-off"></i>
     </view>
-
-    <view class="dock-icon-btn" bindtap="startLearningMode" disabled="{{!isConnected || isLearning}}">
+    <view class="dock-icon-btn" bindtap="startLearningMode">
       <i class="fas fa-graduation-cap {{isLearning ? 'learning' : ''}}"></i>
       <text>{{isLearning ? '学习中' : '学习'}}</text>
     </view>
   </view>
 
-  <!-- 状态 Toast（顶部浮动） -->
   <view class="toast-status {{status && !isLoading ? 'show' : ''}} type-{{statusType}}">
     <i class="fas {{statusType === 'success' ? 'fa-check-circle' : statusType === 'fail' ? 'fa-exclamation-triangle' : 'fa-info-circle'}}"></i>
     <text>{{status}}</text>
   </view>
 
-  <!-- ============ 底部弹出 Sheet：设备选择 ============ -->
+  <view class="loading-overlay" wx:if="{{isLoading}}">
+    <view class="loading-card">
+      <i class="fas fa-sync-alt loading-icon"></i>
+      <text>{{loadingText || '加载中...'}}</text>
+    </view>
+  </view>
+
   <view wx:if="{{showDevicePicker}}" class="sheet-overlay" bindtap="hideDevicePicker">
     <view class="sheet" catchtap="noop">
       <view class="sheet-handle"></view>
       <view class="sheet-header">选择设备</view>
       <scroll-view scroll-y class="sheet-scroll">
-        <view class="sheet-item" 
-              wx:for="{{deviceList}}" wx:key="deviceId"
-              bindtap="onDeviceChange" data-device-id="{{item.deviceId}}"
+        <view class="sheet-item"
+              wx:for="{{deviceList}}"
+              wx:key="deviceId"
+              bindtap="onDeviceChange"
+              data-device-id="{{item.deviceId}}"
               class="{{deviceId === item.deviceId ? 'selected' : ''}}">
           <i class="fas fa-microchip sheet-ico"></i>
           <view class="sheet-texts">
@@ -196,4 +206,30 @@
             <text class="sheet-sub">RSSI: {{item.RSSI}} dBm</text>
           </view>
           <view class="rssi-signal">
-            <view class="signal-bar {{item.RSSI > -50 ? 's4' : item.RSSI > -60 ?
+            <view class="signal-bar {{item.RSSI > -50 ? 's4' : item.RSSI > -60 ? 's3' : item.RSSI > -70 ? 's2' : 's1'}}"></view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <view wx:if="{{showProtocolPicker}}" class="sheet-overlay" bindtap="hideProtocolPicker">
+    <view class="sheet protocol-sheet" catchtap="noop">
+      <view class="sheet-handle"></view>
+      <view class="sheet-header">选择空调协议</view>
+      <scroll-view scroll-y class="sheet-scroll protocol-scroll">
+        <view class="sheet-item"
+              wx:for="{{protocolList}}"
+              wx:key="index"
+              bindtap="onProtocolChange"
+              data-index="{{index}}"
+              class="{{protocolIndex === index ? 'selected' : ''}}">
+          <view class="sheet-texts">
+            <text class="sheet-title">{{item}}</text>
+          </view>
+          <i class="fas fa-check sheet-check" wx:if="{{protocolIndex === index}}"></i>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

@@ -42,10 +42,19 @@ Page({
     protocolList: PROTOCOL_LIST,
     protocolIndex: 0,
     targetTemp: 26,
+    tempQuickList: [
+      { temp: 22 },
+      { temp: 24 },
+      { temp: 26 },
+      { temp: 28 },
+      { temp: 30 }
+    ],
     modeList: MODE_LIST,
     modeIndex: 0,
     speedList: SPEED_LIST,
     speedIndex: 0,
+    currentDeviceName: '',
+    deviceRSSI: '',
     status: "",
     statusType: "",
     bluetoothReady: false,
@@ -303,6 +312,8 @@ Page({
       if (!res.connected) {
         this.setData({
           isConnected: false,
+          currentDeviceName: '',
+          deviceRSSI: '',
           targetServiceId: '',
           rxCharId: '',
           txCharId: ''
@@ -410,6 +421,14 @@ Page({
   },
 
   // 手动触发连接设备
+  toggleConnection() {
+    if (this.data.isConnected) {
+      this.disconnectBLE();
+    } else {
+      this.manualConnect();
+    }
+  },
+
   manualConnect() {
     if (!this.data.bluetoothReady) {
       this.showStatus('蓝牙未就绪，请稍后再试', 'fail');
@@ -485,9 +504,13 @@ Page({
         this.setData({ connectionSucceeded: true }); // 更新连接状态
         this.clearTimer(`connect_${deviceId}`); // 清除超时定时器
         
+        const currentDeviceName = this.getDeviceName(deviceId);
+        const currentDevice = this.getDeviceInfo(deviceId);
         const connectSuccessData = Object.assign({}, this.data, {
           isConnected: true,
           deviceId: deviceId,
+          currentDeviceName: currentDeviceName,
+          deviceRSSI: currentDevice ? currentDevice.RSSI : '',
           connectionAttempts: 0
         });
         this.setData(connectSuccessData);
@@ -784,6 +807,8 @@ Page({
           this.setData({
             isConnected: false,
             deviceId: '',
+            currentDeviceName: '',
+            deviceRSSI: '',
             targetServiceId: '',
             rxCharId: '',
             txCharId: ''
@@ -864,6 +889,16 @@ Page({
     return deviceName;
   },
 
+  getDeviceInfo(deviceId) {
+    const deviceList = this.data.deviceList;
+    for (let i = 0; i < deviceList.length; i++) {
+      if (deviceList[i].deviceId === deviceId) {
+        return deviceList[i];
+      }
+    }
+    return null;
+  },
+
   // 协议选择器控制
   showProtocolPicker() {
     if (!this.data.isConnected) {
@@ -916,7 +951,13 @@ Page({
   // 设备选择变更处理
   onDeviceChange(e) {
     const deviceId = e.currentTarget.dataset.deviceId;
-    this.setData({ deviceId: deviceId, showDevicePicker: false });
+    const currentDevice = this.getDeviceInfo(deviceId);
+    this.setData({
+      deviceId: deviceId,
+      currentDeviceName: this.getDeviceName(deviceId),
+      deviceRSSI: currentDevice ? currentDevice.RSSI : '',
+      showDevicePicker: false
+    });
     
     if (this.data.isConnected) {
       this.disconnectBLE();
@@ -951,8 +992,48 @@ Page({
     if (this.data.isConnected) this.sendSettings();
   },
 
+  quickSetTemp(e) {
+    if (!this.data.isPowerOn) {
+      this.showStatus('请先开启空调', 'fail');
+      return;
+    }
+    const temp = Number(e.currentTarget.dataset.temp);
+    if (temp >= 17 && temp <= 30) {
+      this.setData({ targetTemp: temp });
+      if (this.data.isConnected) this.sendSettings();
+    }
+  },
+
+  quickSetMode(e) {
+    if (!this.data.isPowerOn) {
+      this.showStatus('请先开启空调', 'fail');
+      return;
+    }
+    const index = Number(e.currentTarget.dataset.index);
+    if (index >= 0 && index < this.data.modeList.length) {
+      this.setData({ modeIndex: index });
+      if (this.data.isConnected) this.sendSettings();
+    }
+  },
+
+  quickSetSpeed(e) {
+    if (!this.data.isPowerOn) {
+      this.showStatus('请先开启空调', 'fail');
+      return;
+    }
+    const index = Number(e.currentTarget.dataset.index);
+    if (index >= 0 && index < this.data.speedList.length) {
+      this.setData({ speedIndex: index });
+      if (this.data.isConnected) this.sendSettings();
+    }
+  },
+
   // 增加温度
   increaseTemp() {
+    if (!this.data.isPowerOn) {
+      this.showStatus('请先开启空调', 'fail');
+      return;
+    }
     let temp = this.data.targetTemp;
     if (temp < 30) {
       this.setData({ targetTemp: temp + 1 });
@@ -964,6 +1045,10 @@ Page({
 
   // 降低温度
   decreaseTemp() {
+    if (!this.data.isPowerOn) {
+      this.showStatus('请先开启空调', 'fail');
+      return;
+    }
     let temp = this.data.targetTemp;
     if (temp > 17) {
       this.setData({ targetTemp: temp - 1 });

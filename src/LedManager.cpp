@@ -48,12 +48,22 @@ void LedManager::blinkRed()
 
 void LedManager::blinkPurple()
 {
-    blinking = true;
-    blinkColor = CRGB::Purple;
-    blinkState = true;
-    lastBlinkTime = millis();
-    leds[0] = blinkColor;
-    FastLED.show();
+  blinking = true;
+  blinkColor = CRGB::Purple;
+  blinkState = true;
+  lastBlinkTime = millis();
+  leds[0] = blinkColor;
+  FastLED.show();
+}
+
+void LedManager::blinkWhite()
+{
+  blinking = true;
+  blinkColor = CRGB::White;
+  blinkState = true;
+  lastBlinkTime = millis();
+  leds[0] = blinkColor;
+  FastLED.show();
 }
 
 void LedManager::stopBlink()
