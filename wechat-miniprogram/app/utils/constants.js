@@ -24,6 +24,9 @@ export const PROTOCOL_LIST = [
 export const MODE_LIST = ["自动", "制冷", "制热", "除湿", "送风"]
 export const SPEED_LIST = ["自动", "低速", "中速", "强劲"]
 
+// 首页顶部显示的设备名称（想改名只改这一行）
+export const DEVICE_DISPLAY_NAME = 'ESP32空调控制器'
+
 // Nordic UART Service（与 ESP32 固件保持一致）
 export const BLE_CONFIG = {
   serviceUUID: '6E400001-B5A3-F393-E0A9-E50E24DCCA9E',

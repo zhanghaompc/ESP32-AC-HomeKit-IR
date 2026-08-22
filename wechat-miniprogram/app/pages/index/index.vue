@@ -1,7 +1,7 @@
 <template>
   <view class="container">
     <view class="header">
-      <text class="title">{{ currentDeviceName || '智能空调' }}</text>
+      <text class="title">{{ displayName }}</text>
       <view class="ble-status" :class="connPillClass">
         <text>{{ connPillText }}</text>
       </view>
@@ -26,7 +26,7 @@
     />
     <view v-else class="connected-bar">
       <view class="connected-dot"></view>
-      <text class="connected-text">{{ currentDeviceName || '已连接' }}</text>
+      <text class="connected-text">{{ displayName }}</text>
       <text class="connected-action" @tap="disconnectBLE">断开</text>
     </view>
 
@@ -152,7 +152,7 @@
 </template>
 
 <script>
-import { PROTOCOL_LIST, MODE_LIST, SPEED_LIST, BLE_CONFIG } from '../../utils/constants.js'
+import { PROTOCOL_LIST, MODE_LIST, SPEED_LIST, BLE_CONFIG, DEVICE_DISPLAY_NAME } from '../../utils/constants.js'
 import {
   normalizeUUID,
   stringToArrayBuffer,
@@ -172,6 +172,7 @@ export default {
       connState: 'idle',
       connError: '',
       deviceId: '',
+      displayName: DEVICE_DISPLAY_NAME,
       temp: '--',
       humidity: '--',
       isPowerOn: false,
