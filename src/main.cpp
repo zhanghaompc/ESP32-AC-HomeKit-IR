@@ -399,7 +399,12 @@ void handleBootButton()
           // 在 1.5~3s 之间松手：取消重置，恢复模式指示灯
           longPressPending = false;
           if (isWiFiMode)
-            ledManager.setColor(CRGB::Green);
+          {
+            if (wifiManager.isConnected())
+              ledManager.off(); // WiFi 已连接 = 熄灭
+            else
+              ledManager.blinkGreen(); // WiFi 未连接 = 绿灯闪烁
+          }
           else if (bleManager.isConnected())
             ledManager.setColor(CRGB::Cyan); // BLE 已连接 = 青色常亮
           else

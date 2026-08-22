@@ -18,6 +18,8 @@ void LedManager::setColor(CRGB color)
 
 void LedManager::blinkGreen()
 {
+    if (blinking && blinkColor == CRGB::Green)
+        return; // 已在闪绿色，不重置计时
     blinking = true;
     blinkColor = CRGB::Green;
     blinkState = true;
@@ -28,6 +30,8 @@ void LedManager::blinkGreen()
 
 void LedManager::blinkBlue()
 {
+    if (blinking && blinkColor == CRGB::Blue)
+        return;
     blinking = true;
     blinkColor = CRGB::Blue;
     blinkState = true;
@@ -38,6 +42,8 @@ void LedManager::blinkBlue()
 
 void LedManager::blinkRed()
 {
+    if (blinking && blinkColor == CRGB::Red)
+        return;
     blinking = true;
     blinkColor = CRGB::Red;
     blinkState = true;
@@ -48,8 +54,10 @@ void LedManager::blinkRed()
 
 void LedManager::blinkPurple()
 {
-  blinking = true;
-  blinkColor = CRGB::Purple;
+    if (blinking && blinkColor == CRGB::Purple)
+        return;
+    blinking = true;
+    blinkColor = CRGB::Purple;
   blinkState = true;
   lastBlinkTime = millis();
   leds[0] = blinkColor;
@@ -58,8 +66,10 @@ void LedManager::blinkPurple()
 
 void LedManager::blinkWhite()
 {
-  blinking = true;
-  blinkColor = CRGB::White;
+    if (blinking && blinkColor == CRGB::White)
+        return;
+    blinking = true;
+    blinkColor = CRGB::White;
   blinkState = true;
   lastBlinkTime = millis();
   leds[0] = blinkColor;

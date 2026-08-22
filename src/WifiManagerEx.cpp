@@ -61,20 +61,29 @@ void WifiManagerEx::connectWiFi()
     while (WiFi.status() != WL_CONNECTED && millis() - start < 5000)
     {
         delay(200);
+        ledManager.update(); // 连接等待时保持绿灯闪烁动画
         Serial.print(".");
     }
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("\nWiFi自动连接失败，启动配置门户");
-        startConfigPortal();
+        if (WiFi.SSID().length() == 0)
+        {
+            Serial.println("\n未配置WiFi，启动配置门户");
+            startConfigPortal();
+        }
+        else
+        {
+            Serial.println("\nWiFi连接失败，保持绿灯闪烁并自动重试");
+            // 不弹门户，由 checkWiFiConnection 持续闪烁重连
+        }
     }
     else
     {
         wifiConnected = true;
         syncHomeSpanWifi();
         ledManager.stopBlink();
-        ledManager.setColor(CRGB::Green); // WiFi 已连接 = 绿色常亮
+        ledManager.off(); // WiFi 已连接 = 熄灭
         Serial.printf("\nWiFi连接成功！IP: %s:8080\n", WiFi.localIP().toString().c_str());
         timerManager.syncTime();
     }
@@ -112,6 +121,10 @@ void WifiManagerEx::checkWiFiConnection()
             Serial.println("WiFi已断开，开始闪绿灯...");
             ledManager.blinkGreen();
         }
+        else
+        {
+            ledManager.blinkGreen(); // 初始未连接也保持闪烁（同色去重，不会重置计时）
+        }
 
         if (millis() - lastAttemptTime >= retryInterval)
         {
@@ -128,7 +141,7 @@ void WifiManagerEx::checkWiFiConnection()
             wifiConnected = true;
             syncHomeSpanWifi();
             ledManager.stopBlink();
-            ledManager.setColor(CRGB::Green); // WiFi 已连接 = 绿色常亮
+            ledManager.off(); // WiFi 已连接 = 熄灭
             Serial.printf("WiFi已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
             timerManager.syncTime();
         }
