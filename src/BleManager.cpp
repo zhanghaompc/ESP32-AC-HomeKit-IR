@@ -24,6 +24,7 @@ String handleIrReceiving();
 extern bool irReceiverEnabled;
 void irEnableRecv();
 void irDisableRecv();
+extern volatile bool irLearning;
 
 // BLE连接回调
 class InternalBLEServerCallbacks : public BLEServerCallbacks
@@ -270,6 +271,7 @@ void BleManager::handleCommand(const String &command)
 
         ledManager.stopBlink();
         ledManager.setColor(CRGB::Purple);
+        irLearning = true; // 暂停主循环红外解析，数据只给学习流程
         bool wasRecvEnabled = irReceiverEnabled; // 记录学习前状态，学习后恢复
         irEnableRecv(); // 学习期间开启红外接收（已开启则跳过，避免重复初始化）
         unsigned long start = millis();
@@ -281,6 +283,7 @@ void BleManager::handleCommand(const String &command)
             delay(100);
         }
 
+        irLearning = false;
         if (!wasRecvEnabled) irDisableRecv(); // 学习前未开启则恢复关闭
         ledManager.off();
         if (deviceConnected)

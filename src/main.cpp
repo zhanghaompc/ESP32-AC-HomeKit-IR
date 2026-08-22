@@ -74,6 +74,8 @@ IRac ac(kIrLed);
 
 // 红外接收器状态：防止重复 enableIRIn() 导致 ESP32 定时器/ISR 重复注册失败
 bool irReceiverEnabled = false;
+// 学习期间为 true：暂停主循环的 IRrecvDump，避免把学习要用的红外数据抢走
+volatile bool irLearning = false;
 
 void irEnableRecv()
 {
@@ -733,6 +735,7 @@ void Web_set()
             {
     Serial.println("开始协议学习...");
     ledManager.blinkPurple(); // 学习模式：紫灯亮
+    irLearning = true; // 暂停主循环红外解析，数据只给学习流程
     bool wasRecvEnabled = irReceiverEnabled; // 记录学习前状态，学习后恢复
     irEnableRecv(); // 学习期间开启红外接收（已开启则跳过，避免重复初始化）
 
@@ -744,6 +747,7 @@ void Web_set()
       delay(100);
     }
 
+    irLearning = false;
     if (!wasRecvEnabled) irDisableRecv(); // 学习前未开启则恢复关闭
     ledManager.off(); // 学习结束：紫灯关闭
 
@@ -926,7 +930,7 @@ void loop()
     requestFactoryReset = false;
     factoryReset();
   }
-  if (irReceiverEnabled) IRrecvDump(); // 接收器开启时才解析并打印红外信号
+  if (irReceiverEnabled && !irLearning) IRrecvDump(); // 接收器开启且不在学习时才解析打印
 #ifndef BLE_ONLY
   handleBootButton();
 
