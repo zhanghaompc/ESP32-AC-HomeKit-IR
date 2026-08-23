@@ -71,13 +71,6 @@ const uint8_t kTolerancePercentage = kTolerance;
 IRrecv irrecv(kRecvPin, kCaptureBufferSize, kTimeout, true);
 decode_results results;
 IRac ac(kIrLed);
-IRsend irsend(kIrLed);
-
-// 学习到的原始红外码：IRac 不支持状态编码的协议（如 CARRIER_AC40/GORENJE）回放用
-uint64_t learnedRawCode = 0;
-uint16_t learnedRawBits = 0;
-decode_type_t learnedRawType = decode_type_t::UNKNOWN;
-String learnedRawProtocolName = "";
 
 // 红外接收器状态：防止重复 enableIRIn() 导致 ESP32 定时器/ISR 重复注册失败
 bool irReceiverEnabled = false;
@@ -304,42 +297,6 @@ String loadProtocolFromSPIFFS()
   return "KELVINATOR";
 }
 
-void saveRawCodeToSPIFFS()
-{
-  if (learnedRawType == decode_type_t::UNKNOWN || learnedRawBits == 0) return;
-  File file = SPIFFS.open("/rawcode.txt", "w");
-  if (file)
-  {
-    char line[96];
-    snprintf(line, sizeof(line), "%s;%u;%llX",
-             learnedRawProtocolName.c_str(), learnedRawBits,
-             (unsigned long long)learnedRawCode);
-    file.println(line);
-    file.close();
-    DBG("[IR] 原始红外码已保存: %s\n", line);
-  }
-}
-
-void loadRawCodeFromSPIFFS()
-{
-  if (!SPIFFS.exists("/rawcode.txt")) return;
-  File file = SPIFFS.open("/rawcode.txt", "r");
-  if (!file) return;
-  String line = file.readStringUntil('\n');
-  file.close();
-  line.trim();
-  int p1 = line.indexOf(';');
-  int p2 = line.indexOf(';', p1 + 1);
-  if (p1 <= 0 || p2 <= p1) return;
-  learnedRawProtocolName = line.substring(0, p1);
-  learnedRawBits = (uint16_t)line.substring(p1 + 1, p2).toInt();
-  learnedRawCode = strtoull(line.substring(p2 + 1).c_str(), NULL, 16);
-  learnedRawType = getProtocolEnumFromString(learnedRawProtocolName);
-  DBG("[IR] 从SPIFFS读取原始红外码: %s, %u bits, 0x%llX\n",
-      learnedRawProtocolName.c_str(), learnedRawBits,
-      (unsigned long long)learnedRawCode);
-}
-
 bool updateProtocolFromString(const String &protocolName, decode_type_t &targetProtocol)
 {
   decode_type_t protoEnum = getProtocolEnumFromString(protocolName);
@@ -365,16 +322,6 @@ String handleIrReceiving()
   {
     String protoName = typeToString(results.decode_type);
     Serial.println("识别到的协议：" + protoName);
-
-    // 记录原始红外码，供 IRac 不支持状态编码的协议回放使用
-    if (protoName != "UNKNOWN")
-    {
-      learnedRawCode = results.value;
-      learnedRawBits = results.bits;
-      learnedRawType = results.decode_type;
-      learnedRawProtocolName = protoName;
-      saveRawCodeToSPIFFS();
-    }
 
     String description = IRAcUtils::resultAcToString(&results);
     if (description.length())
@@ -932,8 +879,6 @@ void setup()
 
   // 从SPIFFS读取保存的协议
   lastProtocolName = loadProtocolFromSPIFFS();
-  loadRawCodeFromSPIFFS();
-  irsend.begin();
 
   // 初始化空调状态
   updateProtocolFromString(lastProtocolName, ac.next.protocol);

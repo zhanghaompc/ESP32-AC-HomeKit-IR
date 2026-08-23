@@ -9,11 +9,6 @@
 extern LedManager ledManager;
 extern String lastProtocolName;
 extern IRac ac;
-extern IRsend irsend;
-extern uint64_t learnedRawCode;
-extern uint16_t learnedRawBits;
-extern decode_type_t learnedRawType;
-extern String learnedRawProtocolName;
 extern bool isBLEMode;
 extern bool isWiFiMode;
 extern BleManager bleManager;
@@ -64,17 +59,7 @@ void irTaskFunction(void *parameter)
             DBG("当前空调协议: %s\n", lastProtocolName.c_str());
             DBG("待发射参数 - 温度: %d, 风速: %d, 模式: %d, 电源: %s\n", temp, speed, mode, power ? "开启" : "关闭");
 
-            bool sent = ac.sendAc();
-            if (!sent && learnedRawType != decode_type_t::UNKNOWN &&
-                learnedRawType == ac.next.protocol)
-            {
-                // 该协议 IRac 不支持状态编码，回放学习到的原始红外码
-                DBG("协议不支持状态编码，回放学习到的原始码: 0x%llX (%u bits)\n",
-                    (unsigned long long)learnedRawCode, learnedRawBits);
-                irsend.begin();
-                irsend.send(ac.next.protocol, learnedRawCode, learnedRawBits,
-                            irsend.minRepeats(ac.next.protocol));
-            }
+            ac.sendAc();
             delay(100);
 
             ledManager.off();
