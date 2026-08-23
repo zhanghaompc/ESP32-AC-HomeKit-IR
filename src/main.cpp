@@ -340,10 +340,14 @@ void factoryReset()
 {
   Serial.println("*** 恢复出厂设置：清除 HomeKit 配对 / WiFi / 定时任务 ***");
   ledManager.blinkWhite(); // 恢复出厂 = 白色闪烁
-  delay(200);
+  delay(100);
+  // 只删除已知配置文件（比整盘 SPIFFS.format() 快很多，避免恢复出厂等好几秒）
+  if (SPIFFS.remove("/protocol.txt"))
+    Serial.println("已删除协议配置文件");
+  if (SPIFFS.remove("/timers.txt"))
+    Serial.println("已删除定时任务文件");
   nvs_flash_erase(); // 清掉 HomeSpan 的配对、WiFi 等全部 NVS 数据
-  SPIFFS.format();   // 清掉协议和定时任务
-  delay(200);
+  delay(100);
   ESP.restart();
 }
 
