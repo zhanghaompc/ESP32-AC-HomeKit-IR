@@ -103,7 +103,25 @@ pio run -e esp32_ble -t upload
 
 ## 效果预览
 
-> 待补充：App 首页截图、HomeKit 家庭 App 截图、设备实物图
+**设备实物**
+
+![设备实物](docs/images/device.jpg)
+
+**外壳**
+
+![外壳](docs/images/case.jpg)
+
+**PCB 与 3D 盒体**
+
+![PCB](docs/images/pcb.png) | ![3D 盒体](docs/images/box-3d.png)
+
+**App 控制界面**
+
+![App 首页](docs/images/app1.jpg) | ![App 控制](docs/images/app2.jpg)
+
+**HomeKit 家庭 App**
+
+![HomeKit 连接](docs/images/homekit.jpg)
 
 ## License
 
