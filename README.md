@@ -1,237 +1,110 @@
-# ESP32 空调控制器项目问题总结
+# ESP32 空调红外控制器
 
-## 项目概述
+一个开源的 **ESP32 智能空调红外控制器**：手机 App 通过蓝牙（BLE）直接控制空调，苹果版固件额外支持 **HomeKit**，可以用「家庭」App 和 Siri 语音控制。支持定时任务、协议学习、温湿度监测，一套代码同时支持 **Android / iOS / 微信小程序**。
 
-本项目是一个基于ESP32的空调红外控制器，支持WiFi和BLE两种连接方式，可通过微信小程序进行控制。
+> 项目持续迭代中，欢迎 Star ⭐ 和 Issues 交流。
 
----
+## 功能特性
 
-## 问题一：核心资源争用导致BLE模式下红外发送失败
+| 功能 | 说明 |
+|------|------|
+| 📱 三端 App | uni-app 一套代码，支持 Android / iOS / 微信小程序 |
+| 📶 双控制模式 | BLE 直连（无需 WiFi）+ HomeKit（苹果版，支持 Siri） |
+| ⏰ 定时任务 | 设备本地存储执行，连接 App 自动校时，掉电不丢失 |
+| 🎯 协议学习 | 对准空调遥控器按键，自动识别并保存空调协议 |
+| 🌡️ 温湿度监测 | AHT20 传感器，App 实时显示环境温湿度 |
+| 💡 RGB 状态灯 | 蓝/青/绿/紫/红/黄/白 8 种状态，工作状态一目了然 |
+| 🔄 恢复出厂 | 长按 BOOT 键 3 秒，或 App 一键重置（清配对/定时/协议） |
 
-### 问题描述
-在BLE模式下连接微信小程序后，红外发射功能无法正常工作，空调没有反应。但在WiFi模式下红外发射正常。
+## 快速开始
 
-### 问题原因
-ESP32是双核处理器（核心0和核心1）：
-- BLE协议栈默认运行在**核心0**
-- 之前的代码在BLE回调中直接调用 `ac.sendAc()` 发送红外信号
-- 这导致红外发送也在核心0上执行，与BLE栈争用CPU资源
-- 当BLE通信繁忙时，红外发送时序被打乱，导致发送失败
+### 1. 烧录固件
 
-### 解决方案
-将所有红外发送操作统一通过 `IrManager::send()` 方法，在核心1的专用FreeRTOS任务中执行：
-
-```cpp
-// IrManager.cpp - 红外任务固定在核心1
-void IrManager::begin() {
-    xTaskCreatePinnedToCore(
-        irTaskFunction,    // 任务函数
-        "IR_Tx_Task",      // 任务名称
-        4096 + 1028,       // 栈大小
-        NULL,              // 参数
-        1,                 // 优先级
-        &irTaskHandle,     // 任务句柄
-        1                  // 核心1
-    );
-}
-```
-
-### 修改文件
-1. **BleManager.cpp** - 改用 `irManager.send()` 而非直接调用 `ac.sendAc()`
-2. **main.cpp** - `AC_SET_DATA` 函数添加 `power` 参数
-3. **WifiManagerEx.cpp** - 更新函数声明
-
----
-
-## 问题二：传感器数据频繁刷新
-
-### 问题描述
-串口输出 `传感器读取: 温度=XX.X℃, 湿度=XX.X%` 一直刷新，日志刷屏。
-
-### 问题原因
-传感器读取逻辑没有判断数据是否变化，每次读取都输出日志。
-
-### 解决方案
-添加数据变化检测，只有当温度变化≥0.1℃或湿度变化≥0.5%时才输出日志：
-
-```cpp
-// SensorManager.cpp
-bool changed = false;
-if (abs(temperature - lastTemp) >= 0.1f) {
-    changed = true;
-    lastTemp = temperature;
-}
-if (abs(humidity - lastHumidity) >= 0.5f) {
-    changed = true;
-    lastHumidity = humidity;
-}
-if (changed) {
-    Serial.printf("传感器读取: 温度=%.1f℃, 湿度=%.1f%%\n", temperature, humidity);
-}
-```
-
----
-
-## 问题三：BLE温湿度数据不显示
-
-### 问题描述
-微信小程序连接后，温湿度数据不显示。
-
-### 问题原因
-BLE连接成功后没有立即发送温湿度数据，且主循环中没有调用发送函数。
-
-### 解决方案
-1. BLE连接回调中立即发送当前温湿度
-2. 主循环中调用 `sendEnvironmentDataIfNeeded()` 定期发送
-
-```cpp
-// BleManager.cpp - 连接回调
-void onConnect(BLEServer *pServer) override {
-    parent->deviceConnected = true;
-    ledManager.stopBlink();
-    ledManager.setColor(CRGB::Blue);
-    parent->sendTempHumidity(envTemperature, enHumidity); // 立即发送
-}
-
-// main.cpp - 主循环
-if (isBLEMode) {
-    bleManager.loop();
-    sendEnvironmentDataIfNeeded(); // 定期发送
-}
-```
-
----
-
-## 问题四：LED灯光逻辑不正确
-
-### 问题描述
-- WiFi模式下应该闪绿灯，但灯不闪
-- 学习模式应该显示紫灯，但显示蓝灯
-- 红外发射时灯颜色需要改变
-
-### 解决方案
-实现完整的 `LedManager` 类，支持颜色设置和闪烁：
-
-| 状态 | LED颜色 | 模式 |
-|------|---------|------|
-| BLE等待连接 | 蓝色 | 闪烁 |
-| BLE已连接 | 蓝色 | 常亮 |
-| WiFi等待连接 | 绿色 | 闪烁 |
-| WiFi已连接 | 绿色 | 常亮 |
-| 红外学习 | 紫色 | 常亮 |
-| 红外发射 | 红色 | 闪烁 |
-
----
-
-## 问题五：模式切换隔离问题
-
-### 问题描述
-切换模式时，之前的模式没有完全关闭，导致资源冲突。
-
-### 解决方案
-添加模式标志和切换逻辑：
-
-```cpp
-// 切换到WiFi模式
-if (requestSwitchToWiFi) {
-    bleManager.disable();  // 先关闭BLE
-    isBLEMode = false;
-    isWiFiMode = true;
-    wifiManager.enable();  // 再开启WiFi
-}
-
-// 切换到BLE模式
-if (requestSwitchToBLE) {
-    wifiManager.disable(); // 先关闭WiFi
-    isBLEMode = true;
-    isWiFiMode = false;
-    bleManager.enable();   // 再开启BLE
-}
-```
-
----
-
-## 问题六：小程序命令处理不匹配
-
-### 问题描述
-小程序发送的命令格式与ESP32处理逻辑不匹配，导致红外发射参数错误。
-
-### 小程序命令格式
-
-| 操作 | 命令格式 |
-|------|----------|
-| 打开空调 | `temp=25;mode=0;speed=0;power=on` |
-| 关闭空调 | `power=off` |
-| 调节参数 | `temp=X;mode=X;speed=X;power=on` |
-
-### 解决方案
-更新BLE命令解析逻辑：
-
-```cpp
-// 关机
-if (command == "power=off") {
-    irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, false);
-}
-
-// 开机/调参数
-if (command.startsWith("temp=")) {
-    int temp = command.substring(5, idx1).toInt();
-    int mode = command.substring(idx1+6, idx2).toInt();
-    int speed = command.substring(idx2+6, idx3).toInt();
-    irManager.send(temp, speed, mode, true);
-}
-```
-
----
-
-## 关键技术点总结
-
-### 1. ESP32双核任务分配
-```
-核心0: BLE协议栈、WiFi协议栈、Arduino主循环
-核心1: 红外发送任务（时序敏感）
-```
-
-### 2. 线程安全
-- 使用 `portMUX_TYPE` 临界区保护共享变量
-- 使用 `xSemaphoreHandle` 互斥锁保护BLE特征值操作
-
-### 3. FreeRTOS任务
-```cpp
-xTaskCreatePinnedToCore(
-    taskFunction,   // 任务函数
-    "TaskName",     // 名称
-    stackSize,      // 栈大小
-    NULL,           // 参数
-    priority,       // 优先级
-    &taskHandle,    // 句柄
-    coreID          // 绑定的核心
-);
-```
-
----
-
-## 文件结构
-
-```
-src/
-├── main.cpp           // 主程序入口、HomeKit集成
-├── BleManager.cpp/h   // BLE通信管理
-├── WifiManagerEx.cpp/h// WiFi连接和Web服务器
-├── IrManager.cpp/h    // 红外发射和学习
-├── SensorManager.cpp/h// AHT20温湿度传感器
-└── LedManager.cpp/h   // LED状态指示
-```
-
----
-
-## 编译命令
+需要安装 [PlatformIO](https://platformio.org/)（VS Code + PlatformIO 插件即可）：
 
 ```bash
-pio run -e esp32dev          # 编译
-pio run -e esp32dev -t upload # 上传
+# 苹果版（HomeKit + WiFi + BLE）
+pio run -e esp32dev -t upload
+
+# 安卓版（纯 BLE，无 WiFi）
+pio run -e esp32_ble -t upload
 ```
 
----
+### 2. 安装 App
 
-*文档生成时间：2026-04-04*
+用 [HBuilderX](https://www.dcloud.io/hbuilderx.html) 打开 `wechat-miniprogram/app`，运行到手机或云打包成 Android/iOS 安装包。
+
+### 3. 连接使用
+
+1. 打开 App，扫描并连接设备（BLE 广播名 `ESP32-AC`）
+2. 连接后 App 会自动给设备校时
+3. 选择协议：国内常见品牌可直接对照选择（见下表），或使用「协议学习」对准遥控器自动识别
+4. 苹果版：在「家庭」App 中添加配件，配对码 `11122333`，即可用 Siri 控制
+
+## 国内品牌协议对照
+
+| 品牌 | 协议 |
+|------|------|
+| 格力 | KELVINATOR |
+| 美的 | COOLIX |
+| 海尔 | HAIER_AC / HAIER_AC_YRW02 |
+
+> 不确定型号时，建议用 App 里的「协议学习」自动识别。
+
+## 硬件清单与接线
+
+| 硬件 | 说明 |
+|------|------|
+| ESP32 开发板 | 推荐 8MB Flash（如 ESP32-WROOM-32） |
+| 红外发射管 | GPIO4 |
+| 红外接收头 | GPIO23 |
+| AHT20 | I2C 温湿度传感器 |
+| WS2812B RGB LED | GPIO2，状态指示灯 |
+| BOOT 按键 | GPIO0，短按切换 BLE/WiFi，长按 3 秒恢复出厂 |
+
+> 引脚定义见 `src/main.cpp` / `src/LedManager.h`，可按实际硬件调整。
+
+## 仓库结构
+
+```
+├── src/                  # ESP32 固件（PlatformIO，Arduino 框架）
+│   ├── main.cpp          # 主程序、HomeKit、模式切换
+│   ├── BleManager.*      # BLE 通信（Nordic UART）
+│   ├── IrManager.*       # 红外发射（独立任务运行在核心 1）
+│   ├── WifiManagerEx.*   # WiFi / 配网 / Web 服务
+│   ├── TimerManager.*    # 定时任务
+│   ├── SensorManager.*   # AHT20 温湿度
+│   └── LedManager.*      # RGB 状态灯
+├── wechat-miniprogram/
+│   └── app/              # 双端 App（uni-app，HBuilderX）
+└── *.md                  # 项目文档
+```
+
+## 固件版本说明
+
+| 环境 | 适用平台 | 说明 |
+|------|----------|------|
+| `esp32dev` | 苹果版 | HomeKit + WiFi + BLE，功能完整 |
+| `esp32_ble` | 安卓版 | 纯 BLE，体积小、更省电，无 WiFi/HomeKit |
+
+## 技术要点
+
+- 基于 [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266)（2.8.6）实现几十种空调协议收发
+- 基于 [HomeSpan](https://github.com/HomeSpan/HomeSpan)（1.9.1）实现 HomeKit 配件
+- 红外发射放在**核心 1 的独立 FreeRTOS 任务**中，避免与 BLE/WiFi 争抢 CPU 导致红外时序错误
+- BLE 采用 Nordic UART 服务，明文文本命令协议，详见通信协议文档
+
+## 文档
+
+- [微信小程序BLE通信协议.md](微信小程序BLE通信协议.md) — BLE 指令协议
+- [LED状态说明.md](LED状态说明.md) — 状态灯颜色含义
+- [PLATFORMIO_TIPS.md](PLATFORMIO_TIPS.md) — PlatformIO 使用技巧
+- [项目问题总结.md](项目问题总结.md) — 开发过程踩坑记录
+
+## 效果预览
+
+> 待补充：App 首页截图、HomeKit 家庭 App 截图、设备实物图
+
+## License
+
+仅供学习交流使用。
