@@ -150,32 +150,35 @@ void WifiManagerEx::checkWiFiConnection()
 
 void WifiManagerEx::startConfigPortal()
 {
-    // AP 名带 MAC 后四位（如 AC-38F7），多设备时便于区分
-    String mac = WiFi.macAddress();
-    mac.replace(":", "");
-    String apName = "AC-" + mac.substring(mac.length() - 4);
+    String apName = "esp32AC";
 
     WiFiManager wifiManager;
     wifiManager.setTitle("❄️ 空调控制器配网");
     wifiManager.setTimeout(120);
-    // 品牌化样式：渐变背景 + 圆角卡片 + 主题蓝
+    // 与 App 一致的浅色 HomeKit 风格背景
     wifiManager.setCustomHeadElement(
         "<style>"
         "body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;"
-        "background:linear-gradient(135deg,#0f2a52,#2563eb);min-height:100vh;margin:0;padding:24px 16px;"
+        "background:radial-gradient(1000px 720px at 88% -12%,rgba(37,99,235,.16) 0%,rgba(37,99,235,0) 58%),"
+        "radial-gradient(860px 640px at -12% 28%,rgba(14,165,233,.14) 0%,rgba(14,165,233,0) 55%),"
+        "linear-gradient(170deg,#f2f7ff 0%,#f8faff 42%,#f1fbfd 100%);"
+        "min-height:100vh;margin:0;padding:24px 16px;"
         "display:flex;align-items:center;justify-content:center;box-sizing:border-box;}"
-        ".wrap{background:#fff;border-radius:22px;box-shadow:0 24px 64px rgba(0,0,0,.35);"
-        "max-width:440px;width:100%;padding:32px 28px;box-sizing:border-box;}"
-        "h1{color:#1d4ed8;font-size:22px;text-align:center;margin:0 0 8px;}"
+        ".wrap{background:#fff;border:1px solid #e6edf7;border-radius:16px;"
+        "box-shadow:0 12px 32px rgba(37,99,235,.08);"
+        "max-width:440px;width:100%;padding:28px 24px;box-sizing:border-box;}"
+        "h1{color:#172033;font-size:22px;font-weight:700;text-align:center;margin:0 0 8px;}"
         "h3{display:none;}"
-        "label{display:block;font-weight:600;color:#334155;margin:16px 0 6px;font-size:14px;}"
+        "label{display:block;font-weight:600;color:#172033;margin:16px 0 6px;font-size:14px;}"
         "input[type='text'],input[type='password']{width:100%;box-sizing:border-box;"
-        "padding:12px 14px;border:1px solid #cbd5e1;border-radius:12px;font-size:15px;outline:none;}"
-        "input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);}"
-        "button{width:100%;margin-top:18px;padding:14px;background:linear-gradient(135deg,#2563eb,#3b82f6);"
-        "color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;}"
+        "padding:12px 14px;border:1px solid #e6edf7;border-radius:12px;font-size:15px;outline:none;"
+        "background:#f7faff;color:#172033;}"
+        "input:focus{border-color:#2563eb;background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12);}"
+        "button{width:100%;margin-top:18px;padding:14px;background:linear-gradient(135deg,#38bdf8,#2563eb);"
+        "color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;"
+        "box-shadow:0 10px 24px rgba(37,99,235,.26);}"
         "button:active{transform:scale(.98);}"
-        ".msg{color:#0f766e;text-align:center;}"
+        ".msg{color:#64748b;text-align:center;}"
         "</style>");
 
     if (WiFi.status() != WL_CONNECTED)
