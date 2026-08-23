@@ -33,7 +33,7 @@
     <view class="ambient-row">
       <text class="ambient-item">🌡️ {{ temp || '--' }}°C</text>
       <text class="ambient-item">💧 {{ humidity || '--' }}%</text>
-      <text class="ambient-item link" @tap="queryCurrentProtocol">协议 {{ protocolList[protocolIndex] || '--' }}</text>
+      <text class="ambient-item link" @tap="queryCurrentProtocol">协议 {{ protocolLabel(protocolList[protocolIndex]) || '--' }}</text>
     </view>
 
     <view class="control-card">
@@ -98,7 +98,7 @@
       <view class="protocol-row" @tap="openProtocolPicker">
         <text class="control-label">空调协议</text>
         <view class="protocol-value">
-          <text>{{ protocolList[protocolIndex] || '未选择' }}</text>
+          <text>{{ protocolLabel(protocolList[protocolIndex]) || '未选择' }}</text>
           <text class="chevron">›</text>
         </view>
       </view>
@@ -135,7 +135,7 @@
               :class="{ selected: protocolIndex === index }"
               @tap="onProtocolChange(index)"
             >
-              <text>{{ item }}</text>
+              <text>{{ protocolLabel(item) }}</text>
             </view>
           </view>
         </scroll-view>
@@ -152,7 +152,7 @@
 </template>
 
 <script>
-import { PROTOCOL_LIST, MODE_LIST, SPEED_LIST, BLE_CONFIG, DEVICE_DISPLAY_NAME } from '../../utils/constants.js'
+import { PROTOCOL_LIST, PROTOCOL_CN, MODE_LIST, SPEED_LIST, BLE_CONFIG, DEVICE_DISPLAY_NAME } from '../../utils/constants.js'
 import {
   normalizeUUID,
   stringToArrayBuffer,
@@ -722,6 +722,13 @@ export default {
       console.log('主动查询设备当前协议')
     },
 
+    // 协议名加中文注释显示，如 KELVINATOR（凯利文特）
+    protocolLabel(name) {
+      if (!name) return ''
+      const cn = PROTOCOL_CN[name]
+      return cn ? `${name}（${cn}）` : name
+    },
+
     loadDeviceStatus() {
       this.enqueueCommand('status', this.rxCharId)
       setTimeout(() => {
@@ -851,7 +858,7 @@ export default {
             const idx = this.protocolList.indexOf(protocol)
             if (idx !== -1) {
               this.protocolIndex = idx
-              if (!this.isLoading) this.showStatus(`当前协议已更新为: ${protocol}`, 'success')
+              if (!this.isLoading) this.showStatus(`当前协议已更新为: ${this.protocolLabel(protocol)}`, 'success')
               else console.log('协议已更新为:', protocol)
             } else {
               this.showStatus(`未知协议: ${protocol}`, 'fail')
@@ -867,7 +874,7 @@ export default {
             this.isLearning = false
             const idx = this.protocolList.indexOf(learnMatch[3])
             if (idx !== -1) this.protocolIndex = idx
-            this.showStatus(`学习成功！已识别协议: ${learnMatch[3]}`, 'success')
+            this.showStatus(`学习成功！已识别协议: ${this.protocolLabel(learnMatch[3])}`, 'success')
           } else if (status === 'timeout') {
             this.isLearning = false
             this.showStatus('学习超时，请重试', 'fail')
@@ -1046,7 +1053,7 @@ export default {
       if (this.isConnected) {
         const protocol = this.protocolList[index]
         this.enqueueCommand(`protocol=${protocol}`, this.rxCharId)
-        this.showStatus(`已设置协议: ${protocol}`, 'success')
+        this.showStatus(`已设置协议: ${this.protocolLabel(protocol)}`, 'success')
       }
     },
 
