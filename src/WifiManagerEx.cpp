@@ -150,7 +150,7 @@ void WifiManagerEx::checkWiFiConnection()
 
 void WifiManagerEx::startConfigPortal()
 {
-    String apName = "esp32AC";
+    String apName = "ESP32-AC";
 
     WiFiManager wifiManager;
     wifiManager.setTitle("❄️ 空调控制器配网");
