@@ -67,12 +67,16 @@ void WifiManagerEx::connectWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        // 先彻底断开并关闭 WiFi，避免残留的“正在连接”状态与 WiFiManager 冲突导致死机
-        WiFi.disconnect(true);
-        WiFi.mode(WIFI_OFF);
-        delay(200);
-        Serial.println("\n启动配网门户");
-        startConfigPortal();
+        if (WiFi.SSID().length() == 0)
+        {
+            Serial.println("\n未配置WiFi，启动配置门户");
+            startConfigPortal();
+        }
+        else
+        {
+            Serial.println("\nWiFi连接失败，保持绿灯闪烁并自动重试");
+            // 不弹门户，由 checkWiFiConnection 持续闪烁重连
+        }
     }
     else
     {
@@ -146,48 +150,17 @@ void WifiManagerEx::checkWiFiConnection()
 
 void WifiManagerEx::startConfigPortal()
 {
-    String apName = "ESP32-AC";
-    // 防御性清理：确保 WiFi 栈处于干净状态再交给 WiFiManager
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(200);
-
     WiFiManager wifiManager;
-    wifiManager.setTitle("❄️ 空调控制器配网");
-    wifiManager.setTimeout(120);
-    wifiManager.setConnectTimeout(10);
-    // 与 App 一致的浅色 HomeKit 风格背景
-    wifiManager.setCustomHeadElement(
-        "<style>"
-        "body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;"
-        "background:radial-gradient(1000px 720px at 88% -12%,rgba(37,99,235,.16) 0%,rgba(37,99,235,0) 58%),"
-        "radial-gradient(860px 640px at -12% 28%,rgba(14,165,233,.14) 0%,rgba(14,165,233,0) 55%),"
-        "linear-gradient(170deg,#f2f7ff 0%,#f8faff 42%,#f1fbfd 100%);"
-        "min-height:100vh;margin:0;padding:24px 16px;"
-        "display:flex;align-items:center;justify-content:center;box-sizing:border-box;}"
-        ".wrap{background:#fff;border:1px solid #e6edf7;border-radius:16px;"
-        "box-shadow:0 12px 32px rgba(37,99,235,.08);"
-        "max-width:440px;width:100%;padding:28px 24px;box-sizing:border-box;}"
-        "h1{color:#172033;font-size:22px;font-weight:700;text-align:center;margin:0 0 8px;}"
-        "h3{display:none;}"
-        "label{display:block;font-weight:600;color:#172033;margin:16px 0 6px;font-size:14px;}"
-        "input[type='text'],input[type='password']{width:100%;box-sizing:border-box;"
-        "padding:12px 14px;border:1px solid #e6edf7;border-radius:12px;font-size:15px;outline:none;"
-        "background:#f7faff;color:#172033;}"
-        "input:focus{border-color:#2563eb;background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.12);}"
-        "button{width:100%;margin-top:18px;padding:14px;background:linear-gradient(135deg,#38bdf8,#2563eb);"
-        "color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;"
-        "box-shadow:0 10px 24px rgba(37,99,235,.26);}"
-        "button:active{transform:scale(.98);}"
-        ".msg{color:#64748b;text-align:center;}"
-        "</style>");
+    wifiManager.setTitle("永远相信美好的事物即将发生");
+    wifiManager.setTimeout(60);
 
-    Serial.printf("启动配网门户，AP: %s\n", apName.c_str());
-    // 先尝试已保存的 WiFi，失败则自动打开配网门户
-    if (!wifiManager.autoConnect(apName.c_str()))
+    if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("配网超时或失败，保持配置门户开放...");
-        wifiManager.startConfigPortal(apName.c_str());
+        if (!wifiManager.autoConnect("WIFI配置"))
+        {
+            Serial.println("WiFi连接失败，开启配置门户...");
+            wifiManager.startConfigPortal("WIFI配置");
+        }
     }
 }
 
