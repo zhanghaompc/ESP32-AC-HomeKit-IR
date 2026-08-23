@@ -150,16 +150,41 @@ void WifiManagerEx::checkWiFiConnection()
 
 void WifiManagerEx::startConfigPortal()
 {
+    // AP 名带 MAC 后四位（如 AC-38F7），多设备时便于区分
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+    String apName = "AC-" + mac.substring(mac.length() - 4);
+
     WiFiManager wifiManager;
-    wifiManager.setTitle("永远相信美好的事物即将发生");
-    wifiManager.setTimeout(60);
+    wifiManager.setTitle("❄️ 空调控制器配网");
+    wifiManager.setTimeout(120);
+    // 品牌化样式：渐变背景 + 圆角卡片 + 主题蓝
+    wifiManager.setCustomHeadElement(
+        "<style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;"
+        "background:linear-gradient(135deg,#0f2a52,#2563eb);min-height:100vh;margin:0;padding:24px 16px;"
+        "display:flex;align-items:center;justify-content:center;box-sizing:border-box;}"
+        ".wrap{background:#fff;border-radius:22px;box-shadow:0 24px 64px rgba(0,0,0,.35);"
+        "max-width:440px;width:100%;padding:32px 28px;box-sizing:border-box;}"
+        "h1{color:#1d4ed8;font-size:22px;text-align:center;margin:0 0 8px;}"
+        "h3{display:none;}"
+        "label{display:block;font-weight:600;color:#334155;margin:16px 0 6px;font-size:14px;}"
+        "input[type='text'],input[type='password']{width:100%;box-sizing:border-box;"
+        "padding:12px 14px;border:1px solid #cbd5e1;border-radius:12px;font-size:15px;outline:none;}"
+        "input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15);}"
+        "button{width:100%;margin-top:18px;padding:14px;background:linear-gradient(135deg,#2563eb,#3b82f6);"
+        "color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;}"
+        "button:active{transform:scale(.98);}"
+        ".msg{color:#0f766e;text-align:center;}"
+        "</style>");
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        if (!wifiManager.autoConnect("WIFI配置"))
+        Serial.printf("启动配网门户，AP: %s\n", apName.c_str());
+        if (!wifiManager.autoConnect(apName.c_str()))
         {
             Serial.println("WiFi连接失败，开启配置门户...");
-            wifiManager.startConfigPortal("WIFI配置");
+            wifiManager.startConfigPortal(apName.c_str());
         }
     }
 }
