@@ -67,16 +67,12 @@ void WifiManagerEx::connectWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        if (WiFi.SSID().length() == 0)
-        {
-            Serial.println("\n未配置WiFi，启动配置门户");
-            startConfigPortal();
-        }
-        else
-        {
-            Serial.println("\nWiFi连接失败，保持绿灯闪烁并自动重试");
-            // 不弹门户，由 checkWiFiConnection 持续闪烁重连
-        }
+        // 先彻底断开并关闭 WiFi，避免残留的“正在连接”状态与 WiFiManager 冲突导致死机
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        delay(200);
+        Serial.println("\n启动配网门户");
+        startConfigPortal();
     }
     else
     {
@@ -151,10 +147,15 @@ void WifiManagerEx::checkWiFiConnection()
 void WifiManagerEx::startConfigPortal()
 {
     String apName = "ESP32-AC";
+    // 防御性清理：确保 WiFi 栈处于干净状态再交给 WiFiManager
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    delay(200);
 
     WiFiManager wifiManager;
     wifiManager.setTitle("❄️ 空调控制器配网");
     wifiManager.setTimeout(120);
+    wifiManager.setConnectTimeout(10);
     // 与 App 一致的浅色 HomeKit 风格背景
     wifiManager.setCustomHeadElement(
         "<style>"
@@ -181,14 +182,12 @@ void WifiManagerEx::startConfigPortal()
         ".msg{color:#64748b;text-align:center;}"
         "</style>");
 
-    if (WiFi.status() != WL_CONNECTED)
+    Serial.printf("启动配网门户，AP: %s\n", apName.c_str());
+    // 先尝试已保存的 WiFi，失败则自动打开配网门户
+    if (!wifiManager.autoConnect(apName.c_str()))
     {
-        Serial.printf("启动配网门户，AP: %s\n", apName.c_str());
-        if (!wifiManager.autoConnect(apName.c_str()))
-        {
-            Serial.println("WiFi连接失败，开启配置门户...");
-            wifiManager.startConfigPortal(apName.c_str());
-        }
+        Serial.println("配网超时或失败，保持配置门户开放...");
+        wifiManager.startConfigPortal(apName.c_str());
     }
 }
 
