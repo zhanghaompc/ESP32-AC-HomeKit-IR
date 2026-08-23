@@ -153,13 +153,16 @@ void WifiManagerEx::startConfigPortal()
     WiFiManager wifiManager;
     wifiManager.setTitle("永远相信美好的事物即将发生");
     wifiManager.setTimeout(60);
+    // 门户是阻塞式的，主循环的LED刷新跑不到，改为常亮绿灯表示“配网等待中”，
+    // 连接成功后由 checkWiFiConnection 熄灭
+    ledManager.setColor(CRGB::Green);
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        if (!wifiManager.autoConnect("WIFI配置"))
+        if (!wifiManager.autoConnect("ESP32-AC"))
         {
             Serial.println("WiFi连接失败，开启配置门户...");
-            wifiManager.startConfigPortal("WIFI配置");
+            wifiManager.startConfigPortal("ESP32-AC");
         }
     }
 }
