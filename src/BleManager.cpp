@@ -26,6 +26,7 @@ void irEnableRecv();
 void irDisableRecv();
 extern volatile bool irLearning;
 
+#ifndef WIFI_ONLY
 // BLE连接回调
 class InternalBLEServerCallbacks : public BLEServerCallbacks
 {
@@ -67,6 +68,7 @@ public:
         parent->handleCommand(String(rxValue.c_str()));
     }
 };
+#endif
 
 // 互斥锁操作
 bool BleManager::takeMutex()
@@ -91,6 +93,7 @@ void BleManager::begin()
 
 void BleManager::enable()
 {
+#ifndef WIFI_ONLY
     if (pServer)
     {
         BLEDevice::deinit();
@@ -113,10 +116,12 @@ void BleManager::enable()
     pService->start();
     startAdvertising();
     ledManager.blinkBlue();
+#endif
 }
 
 void BleManager::disable()
 {
+#ifndef WIFI_ONLY
     if (pServer)
         BLEDevice::deinit();
     pServer = nullptr;
@@ -124,6 +129,7 @@ void BleManager::disable()
     deviceConnected = false;
     ledManager.stopBlink();
     ledManager.off();
+#endif
 }
 
 void BleManager::loop()
@@ -143,6 +149,7 @@ bool BleManager::isConnected() const { return deviceConnected; }
 
 void BleManager::sendStatus(const String &status)
 {
+#ifndef WIFI_ONLY
     if (!takeMutex())
         return;
     if (deviceConnected && pTxCharacteristic)
@@ -151,10 +158,12 @@ void BleManager::sendStatus(const String &status)
         pTxCharacteristic->notify();
     }
     giveMutex();
+#endif
 }
 
 void BleManager::sendTempHumidity(float temp, float humidity)
 {
+#ifndef WIFI_ONLY
     if (!deviceConnected || !pTxCharacteristic)
         return;
     if (abs(temp - lastSentTemp) < 0.1f && abs(humidity - lastSentHumidity) < 0.3f)
@@ -169,10 +178,12 @@ void BleManager::sendTempHumidity(float temp, float humidity)
     lastSentTemp = temp;
     lastSentHumidity = humidity;
     giveMutex();
+#endif
 }
 
 void BleManager::sendProtocol(const String &protocol)
 {
+#ifndef WIFI_ONLY
     if (!deviceConnected || !pTxCharacteristic)
         return;
 
@@ -182,6 +193,7 @@ void BleManager::sendProtocol(const String &protocol)
     pTxCharacteristic->setValue(data.c_str());
     pTxCharacteristic->notify();
     giveMutex();
+#endif
 }
 
 // 分块发送：BLE 默认单包最多 20 字节，超长消息会被截断。
@@ -191,6 +203,7 @@ void BleManager::sendChunked(const String &data)
 {
     if (responseForwarder)
         responseForwarder(data);
+#ifndef WIFI_ONLY
     if (!deviceConnected || !pTxCharacteristic)
         return;
 
@@ -204,8 +217,10 @@ void BleManager::sendChunked(const String &data)
     }
     pTxCharacteristic->setValue("\n");
     pTxCharacteristic->notify();
+#endif
 }
 
+#ifndef WIFI_ONLY
 void BleManager::startAdvertising()
 {
     BLEAdvertising *adv = BLEDevice::getAdvertising();
@@ -216,6 +231,7 @@ void BleManager::startAdvertising()
     adv->setMaxInterval(2400);
     adv->start();
 }
+#endif
 
 // ====================== 核心指令处理（线程安全+匹配小程序） ======================
 void BleManager::handleCommand(const String &command)

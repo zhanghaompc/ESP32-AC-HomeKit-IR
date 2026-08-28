@@ -23,6 +23,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <map>
 
 // ======================== 对象化模块 ========================
 BleManager bleManager;
@@ -925,11 +926,18 @@ void setup()
   new DEV_MODE_SWITCH();
 #endif
 
-  // 默认启动BLE模式
+  // 默认启动模式：完整版=BLE；WiFi专用版=WiFi
+#ifndef WIFI_ONLY
   isBLEMode = true;
   isWiFiMode = false;
   bleManager.enable();
   Serial.println("系统初始化完成,默认启动BLE模式");
+#else
+  isBLEMode = false;
+  isWiFiMode = true;
+  wifiManager.enable();
+  Serial.println("系统初始化完成,默认启动WiFi模式");
+#endif
 }
 
 void sendEnvironmentDataIfNeeded()
@@ -951,6 +959,7 @@ void loop()
 #ifndef BLE_ONLY
   handleBootButton();
 
+#ifndef WIFI_ONLY
   if (requestSwitchToWiFi)
   {
     requestSwitchToWiFi = false;
@@ -976,6 +985,7 @@ void loop()
     bleManager.enable();
     isSwitching = false;
   }
+#endif
 #endif
 
   if (isBLEMode)

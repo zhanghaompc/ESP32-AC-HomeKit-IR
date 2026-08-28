@@ -1,10 +1,12 @@
 #ifndef BLE_MANAGER_H
 #define BLE_MANAGER_H
 
+#ifndef WIFI_ONLY
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <BLE2902.h> 
+#include <BLE2902.h>
+#endif
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <FastLED.h>
@@ -16,8 +18,11 @@
 class BleManager
 {
 private:
+#ifndef WIFI_ONLY
     BLEServer *pServer = nullptr;
     BLECharacteristic *pTxCharacteristic = nullptr;
+    void startAdvertising();
+#endif
     bool oldDeviceConnected = false;
     float lastSentTemp = 0.0f;
     float lastSentHumidity = 0.0f;
@@ -25,7 +30,6 @@ private:
     SemaphoreHandle_t xBleMutex = nullptr;
     const TickType_t xMutexTimeout = pdMS_TO_TICKS(100);
 
-    void startAdvertising();
     bool takeMutex();
     void giveMutex();
 
