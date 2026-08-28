@@ -44,14 +44,28 @@ Write-Host "[3.5/5] 版本清单已生成: firmware\ota.json ($version)" -Foregr
 
 # ---------- 4. git 提交 ----------
 git add src firmware publish.ps1 publish.bat
-git commit -m "bump firmware to v$version"
-if ($LASTEXITCODE -ne 0) { throw "git commit 失败（可能没有可提交的改动）" }
-Write-Host "[4/5] 已提交" -ForegroundColor Green
+$commitMsg = git commit -m "bump firmware to v$version" 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "[4/5] 已提交" -ForegroundColor Green
+}
+elseif ($commitMsg -match 'nothing to commit') {
+    Write-Host "[4/5] 没有新的改动，跳过提交" -ForegroundColor Yellow
+}
+else {
+    Write-Host $commitMsg
+    throw "git commit 失败，请检查上面的错误信息"
+}
 
 # ---------- 5. 推送 ----------
 Write-Host "[5/5] 推送到 GitHub master ...（网络慢时可能需要一两分钟）" -ForegroundColor Green
-git push origin master
-if ($LASTEXITCODE -ne 0) { throw "git push 失败，请检查网络后重试" }
+$pushMsg = git push origin master 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host $pushMsg
+    if ($pushMsg -match 'fetch first|non-fast-forward|rejected') {
+        Write-Host "提示：远端和本地历史分叉了，可执行 git push --force origin master 对齐（个人固件仓库是安全的）" -ForegroundColor Yellow
+    }
+    throw "git push 失败，请检查网络后重试"
+}
 
 $sha = (git rev-parse HEAD).Trim()
 Write-Host ""
