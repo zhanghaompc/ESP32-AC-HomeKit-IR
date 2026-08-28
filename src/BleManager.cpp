@@ -316,6 +316,21 @@ void BleManager::handleCommand(const String &command)
     }
 
     // OTA 固件更新：从云端 URL 下载并升级
+#ifndef BLE_ONLY
+    // 面板从 GitHub 查到最新版本后，把固定地址发给设备（手机端免手动设置）
+    if (command.startsWith("ota=seturl "))
+    {
+        String u = command.substring(11);
+        u.trim();
+        if (otaManager.setUrl(u))
+            sendChunked("ota=url ok");
+        else
+            sendChunked("ota=url invalid");
+        giveMutex();
+        return;
+    }
+#endif
+
     if (command == "ota=check")
     {
 #ifdef BLE_ONLY
