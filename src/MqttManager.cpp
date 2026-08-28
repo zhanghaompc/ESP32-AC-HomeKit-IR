@@ -2,6 +2,7 @@
 #include "BleManager.h"
 #include "Debug.h"
 #include "DeviceConfig.h"
+#include "OtaManager.h"
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
@@ -12,6 +13,7 @@ extern float envTemperature;
 extern float enHumidity;
 extern String lastProtocolName;
 extern IRac ac;
+extern OtaManager otaManager;
 
 #define MQTT_CONFIG_FILE "/mqtt.json"
 
@@ -183,6 +185,7 @@ void MqttManager::publishStatus()
     doc["light"] = ac.next.light;
     doc["sleep"] = ac.next.sleep >= 0;
     doc["clean"] = ac.next.clean;
+    doc["fw"] = otaManager.getVersion();
 
     String json;
     serializeJson(doc, json);

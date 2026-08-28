@@ -8,6 +8,7 @@
 #include "SensorManager.h"
 #include "LedManager.h"
 #include "TimerManager.h"
+#include "OtaManager.h"
 #include "Debug.h"
 #include "PinConfig.h"
 
@@ -35,6 +36,7 @@ IrManager irManager;
 SensorManager sensorManager;
 LedManager ledManager;
 TimerManager timerManager;
+OtaManager otaManager;
 
 // 功能按键（引脚统一在 PinConfig.h 中管理）
 #define KEY KEY_PIN
@@ -889,6 +891,7 @@ void setup()
   {
     Serial.println("SPIFFS初始化失败");
   }
+  otaManager.begin();
 
   // 定时任务依赖 SPIFFS 存储，必须在 SPIFFS 挂载之后再初始化
   timerManager.begin();

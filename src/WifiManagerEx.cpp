@@ -3,6 +3,7 @@
 #include "TimerManager.h"
 #include "MqttManager.h"
 #include "DeviceConfig.h"
+#include "OtaManager.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <SPIFFS.h>
@@ -10,12 +11,16 @@
 #include <homespan.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
+#include <ArduinoOTA.h>
+#include <Update.h>
+#include <HTTPUpdate.h>
 
 extern float envTemperature;
 extern float enHumidity;
 extern String lastProtocolName;
 extern LedManager ledManager;
 extern TimerManager timerManager;
+extern OtaManager otaManager;
 void AC_SET_DATA(int temp, int speed, int mode, bool power = true);
 bool updateProtocolFromString(const String &, decode_type_t &);
 extern IRac ac;
@@ -44,6 +49,7 @@ void WifiManagerEx::loop()
     {
         server.handleClient();
     }
+    ArduinoOTA.handle();
     checkWiFiConnection();
 }
 
@@ -183,6 +189,14 @@ void WifiManagerEx::startWebServer()
     setupWebHandlers();
     server.begin();
     webServerActive = true;
+
+    // ArduinoOTA：PlatformIO 里 pio run -t upload --upload-port <设备IP> 即可无线烧录
+    ArduinoOTA.setHostname(deviceApName().c_str());
+    ArduinoOTA.onStart([]() { Serial.println("OTA 开始..."); });
+    ArduinoOTA.onEnd([]() { Serial.println("\nOTA 结束，重启中..."); });
+    ArduinoOTA.onError([](ota_error_t err) { Serial.printf("OTA 错误: %u\n", err); });
+    ArduinoOTA.begin();
+
     Serial.println("WebServer已启动");
 }
 
@@ -195,6 +209,78 @@ void WifiManagerEx::stopWebServer()
 
 void WifiManagerEx::setupWebHandlers()
 {
+    // 云端 OTA：查询当前固件版本和升级地址
+    server.on("/otaget", HTTP_GET, [this]() {
+        server.send(200, "application/json",
+                    "{\"fw\":\"" + otaManager.getVersion() +
+                    "\",\"url\":\"" + otaManager.getUrl() + "\"}");
+    });
+
+    // 云端 OTA：设置升级地址（http://IP:8080/otaset?url=...）
+    server.on("/otaset", HTTP_GET, [this]() {
+        String u = server.arg("url");
+        bool ok = otaManager.setUrl(u);
+        server.send(200, "text/plain", ok ? "OTA URL saved" : "invalid url");
+    });
+
+    // 云端 OTA：立即检查更新（http://IP:8080/ota）
+    server.on("/ota", HTTP_GET, [this]() {
+        int ret = otaManager.checkUpdate();
+        if (ret == HTTP_UPDATE_OK)
+        {
+            server.send(200, "text/plain", "OTA ok, rebooting...");
+            delay(300);
+            ESP.restart();
+        }
+        else
+        {
+            server.send(200, "text/plain", String("OTA fail: ") + httpUpdate.getLastErrorString());
+        }
+    });
+
+    // 网页 OTA 升级页面
+    server.on("/update", HTTP_GET, [this]() {
+        String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+                      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                      "<title>固件升级</title></head>"
+                      "<body style='font-family:sans-serif;padding:20px;text-align:center'>"
+                      "<h2>固件升级 (OTA)</h2>"
+                      "<form method='POST' action='/update' enctype='multipart/form-data'>"
+                      "<input type='file' name='firmware' accept='.bin'><br><br>"
+                      "<button type='submit'>上传并升级</button></form>"
+                      "<p style='color:#888;font-size:12px'>升级期间请勿断电，完成后设备自动重启</p>"
+                      "</body></html>";
+        server.send(200, "text/html", html);
+    });
+
+    // OTA 固件上传
+    server.on("/update", HTTP_POST, [this]() {
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/plain", Update.hasError() ? "升级失败" : "升级成功，正在重启...");
+        delay(1000);
+        ESP.restart();
+    }, [this]() {
+        HTTPUpload &upload = server.upload();
+        if (upload.status == UPLOAD_FILE_START)
+        {
+            Serial.printf("OTA 上传开始: %s\n", upload.filename.c_str());
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+                Update.printError(Serial);
+        }
+        else if (upload.status == UPLOAD_FILE_WRITE)
+        {
+            if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
+                Update.printError(Serial);
+        }
+        else if (upload.status == UPLOAD_FILE_END)
+        {
+            if (Update.end(true))
+                Serial.printf("OTA 成功，重启中... (%d 字节)\n", upload.totalSize);
+            else
+                Update.printError(Serial);
+        }
+    });
+
     server.on("/", HTTP_GET, [this]()
               {
         File file = SPIFFS.open("/index.html", "r");

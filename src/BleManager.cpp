@@ -2,11 +2,13 @@
 #include "LedManager.h"
 #include "IrManager.h"
 #include "TimerManager.h"
+#include "OtaManager.h"
 #include "Debug.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
+#include <HTTPUpdate.h>
 
 extern float envTemperature;
 extern float enHumidity;
@@ -14,6 +16,7 @@ extern String lastProtocolName;
 extern LedManager ledManager;
 extern IrManager irManager;
 extern TimerManager timerManager;
+extern OtaManager otaManager;
 extern bool requestSwitchToWiFi;
 extern bool requestFactoryReset;
 extern bool isBLEMode;
@@ -308,6 +311,25 @@ void BleManager::handleCommand(const String &command)
         ac.next.clean = !ac.next.clean;
         irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, ac.next.power);
         sendChunked(String("clean=") + (ac.next.clean ? "on" : "off"));
+        giveMutex();
+        return;
+    }
+
+    // OTA 固件更新：从云端 URL 下载并升级
+    if (command == "ota=check")
+    {
+        sendChunked(String("ota=start fw=") + otaManager.getVersion());
+        int ret = otaManager.checkUpdate();
+        if (ret == HTTP_UPDATE_OK)
+        {
+            sendChunked("ota=ok");
+            delay(300);
+            ESP.restart();
+        }
+        else
+        {
+            sendChunked(String("ota=fail:") + httpUpdate.getLastErrorString());
+        }
         giveMutex();
         return;
     }

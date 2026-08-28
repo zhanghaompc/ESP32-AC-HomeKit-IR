@@ -8,10 +8,10 @@ pio run -e esp32dev
 pio run -e esp32_ble
 
 # 编译并上传（指定端口）
-pio run -e esp32dev -t upload --upload-port COM8
+pio run -e esp32dev -t upload --upload-port COMX
 
 # 打开串口监视器
-pio device monitor -p COM8 -b 115200
+pio device monitor -p COMX -b 115200
 
 # 清理编译缓存（遇到“改了代码但没生效”时用）
 pio run -t clean
