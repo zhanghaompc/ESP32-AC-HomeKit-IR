@@ -45,15 +45,7 @@ void irTaskFunction(void *parameter)
             ac.next.fanspeed = (stdAc::fanspeed_t)speed;
             ac.next.mode = (stdAc::opmode_t)mode;
             ac.next.power = power;
-            ac.next.light = true;
-            ac.next.beep = false;
-            ac.next.econo = false;
-            ac.next.filter = false;
-            ac.next.turbo = false;
-            ac.next.quiet = false;
-            ac.next.sleep = -1;
-            ac.next.clean = false;
-            ac.next.clock = -1;
+            // 附加功能字段（turbo/light/sleep/clean/swing 等）保持 ac.next 中的状态，不重置
 
             DBG("准备发射红外信号...\n");
             DBG("当前空调协议: %s\n", lastProtocolName.c_str());

@@ -254,6 +254,48 @@ void BleManager::handleCommand(const String &command)
         return;
     }
 
+    // 附加功能：强劲/扫风/面板灯/睡眠/自清洁（切换型）
+    if (command == "turbo")
+    {
+        ac.next.turbo = !ac.next.turbo;
+        irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, ac.next.power);
+        sendChunked(String("turbo=") + (ac.next.turbo ? "on" : "off"));
+        giveMutex();
+        return;
+    }
+    if (command == "swing")
+    {
+        ac.next.swingv = (ac.next.swingv == stdAc::swingv_t::kOff) ? stdAc::swingv_t::kAuto : stdAc::swingv_t::kOff;
+        irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, ac.next.power);
+        sendChunked(String("swing=") + (ac.next.swingv != stdAc::swingv_t::kOff ? "on" : "off"));
+        giveMutex();
+        return;
+    }
+    if (command == "light")
+    {
+        ac.next.light = !ac.next.light;
+        irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, ac.next.power);
+        sendChunked(String("light=") + (ac.next.light ? "on" : "off"));
+        giveMutex();
+        return;
+    }
+    if (command == "sleep")
+    {
+        ac.next.sleep = (ac.next.sleep < 0) ? 1 : -1;
+        irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, ac.next.power);
+        sendChunked(String("sleep=") + (ac.next.sleep >= 0 ? "on" : "off"));
+        giveMutex();
+        return;
+    }
+    if (command == "clean")
+    {
+        ac.next.clean = !ac.next.clean;
+        irManager.send(ac.next.degrees, (int)ac.next.fanspeed, (int)ac.next.mode, ac.next.power);
+        sendChunked(String("clean=") + (ac.next.clean ? "on" : "off"));
+        giveMutex();
+        return;
+    }
+
     // 协议设置
     if (command.startsWith("protocol="))
     {

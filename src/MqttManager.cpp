@@ -178,6 +178,11 @@ void MqttManager::publishStatus()
     doc["degrees"] = ac.next.degrees;
     doc["protocol"] = lastProtocolName;
     doc["online"] = true;   // 设备在线标志（配合 LWT 离线消息）
+    doc["turbo"] = ac.next.turbo;
+    doc["swing"] = ac.next.swingv != stdAc::swingv_t::kOff;
+    doc["light"] = ac.next.light;
+    doc["sleep"] = ac.next.sleep >= 0;
+    doc["clean"] = ac.next.clean;
 
     String json;
     serializeJson(doc, json);
