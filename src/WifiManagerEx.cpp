@@ -231,6 +231,7 @@ void WifiManagerEx::startConfigPortal()
         configServer.send(302, "text/plain", "");
     });
 
+    configServer.begin(); // 必须调用 begin() 才会真正监听 80 端口
     Serial.println("配网门户已开启，等待手机连接...");
     unsigned long portalStart = millis();
     while (millis() - portalStart < 180000) // 3 分钟无人操作则重启
