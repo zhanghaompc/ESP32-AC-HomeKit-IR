@@ -61,7 +61,7 @@ $commitR = Invoke-Git @('commit', '-m', "bump firmware to v$version")
 if ($commitR.Code -eq 0) {
     Write-Host "[4/5] 已提交" -ForegroundColor Green
 }
-elseif ($commitR.Out -match 'nothing to commit') {
+elseif ($commitR.Out -match 'nothing to commit|no changes added to commit') {
     Write-Host "[4/5] 没有新的改动，跳过提交" -ForegroundColor Yellow
 }
 else {
@@ -78,7 +78,7 @@ $manifestR = Invoke-Git @('commit', '-m', "update ota manifest url @$sha1")
 if ($manifestR.Code -eq 0) {
     Write-Host "[4.5/5] 版本清单地址已固定到提交 $sha1" -ForegroundColor Green
 }
-elseif ($manifestR.Out -match 'nothing to commit') {
+elseif ($manifestR.Out -match 'nothing to commit|no changes added to commit') {
     Write-Host "[4.5/5] 版本清单无需修改" -ForegroundColor Yellow
 }
 else {
