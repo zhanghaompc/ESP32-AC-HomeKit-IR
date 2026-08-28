@@ -352,6 +352,8 @@ void factoryReset()
     Serial.println("已删除协议配置文件");
   if (SPIFFS.remove("/timers.txt"))
     Serial.println("已删除定时任务文件");
+  if (SPIFFS.remove("/wifi.json"))
+    Serial.println("已删除WiFi配置文件");
   nvs_flash_erase(); // 清掉 HomeSpan 的配对、WiFi 等全部 NVS 数据
   delay(100);
   ESP.restart();

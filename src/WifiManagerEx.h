@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 
 class WifiManagerEx
 {
@@ -17,6 +18,8 @@ public:
 
 private:
     WebServer server;
+    WebServer configServer;
+    DNSServer dnsServer;
     bool wifiConnected = false;
     bool webServerActive = false;
     void setupWebHandlers();
@@ -27,6 +30,9 @@ private:
     void connectWiFi();
     void disconnectWiFi();
     void syncHomeSpanWifi();
+    bool loadWifiCredentials(String &ssid, String &pass);
+    void saveWifiCredentials(const String &ssid, const String &pass);
+    String buildConfigPageHtml(const String &apName);
     unsigned long lastAttemptTime = 0;
     const unsigned long retryInterval = 5000;
 };

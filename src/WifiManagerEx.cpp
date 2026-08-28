@@ -7,7 +7,7 @@
 #include <Arduino.h>
 #include <FastLED.h>
 #include <SPIFFS.h>
-#include <WiFiManager.h>
+#include <ArduinoJson.h>
 #include <homespan.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
@@ -60,8 +60,20 @@ bool WifiManagerEx::isConnected() const
 
 void WifiManagerEx::connectWiFi()
 {
+    String savedSsid, savedPass;
+    bool hasSaved = loadWifiCredentials(savedSsid, savedPass);
+
     WiFi.mode(WIFI_STA);
-    WiFi.begin();
+    if (hasSaved)
+    {
+        Serial.printf("使用已保存的WiFi: %s\n", savedSsid.c_str());
+        WiFi.begin(savedSsid.c_str(), savedPass.c_str());
+    }
+    else
+    {
+        // 兼容旧固件：WiFiManager 曾把凭据写入 NVS，WiFi.begin() 能自动读取
+        WiFi.begin();
+    }
     Serial.println("正在连接WiFi...");
     ledManager.blinkGreen();
 
@@ -75,9 +87,9 @@ void WifiManagerEx::connectWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        if (WiFi.SSID().length() == 0)
+        if (!hasSaved && WiFi.SSID().length() == 0)
         {
-            Serial.println("\n未配置WiFi，启动配置门户");
+            Serial.println("\n未配置WiFi，启动中文配置门户");
             startConfigPortal();
         }
         else
@@ -158,30 +170,152 @@ void WifiManagerEx::checkWiFiConnection()
 
 void WifiManagerEx::startConfigPortal()
 {
-    WiFiManager wifiManager;
     String apName = deviceApName();   // 例如 ESP32AC_A1B2
-    wifiManager.setTitle(("设备配网 " + apName).c_str());
-    wifiManager.setTimeout(60);
-
-    // 在配网页面上显示设备编号和推荐 MQTT 主题（后缀小写，直接复制即可）
-    String deviceHtml = "<div style='padding:8px 0;font-size:14px;color:#666'>"
-                        "设备编号：<b style='color:#222'>" + apName + "</b><br>"
-                        "MQTT主题：<b style='color:#222'>" + deviceMqttBase() + "</b></div>";
-    WiFiManagerParameter deviceParam(deviceHtml.c_str());
-    wifiManager.addParameter(&deviceParam);
-
-    // 门户是阻塞式的，主循环的LED刷新跑不到，改为常亮绿灯表示“配网等待中”，
-    // 连接成功后由 checkWiFiConnection 熄灭
     ledManager.setColor(CRGB::Green);
 
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        if (!wifiManager.autoConnect(apName.c_str()))
+    Serial.printf("启动中文配置门户: %s (AP IP: 192.168.4.1)\n", apName.c_str());
+
+    // 开一个无密码热点，手机/电脑连上后访问任意网址都会被引导到配网页
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(apName.c_str());
+
+    dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+    dnsServer.start(53, "*", WiFi.softAPIP());
+
+    configServer.on("/", HTTP_GET, [this]() {
+        configServer.send(200, "text/html; charset=utf-8", buildConfigPageHtml(deviceApName()));
+    });
+
+    // 扫描周围 WiFi，返回 JSON 列表（页面先显示，点“扫描 WiFi”再异步拉取，秒开不卡）
+    configServer.on("/scan", HTTP_GET, [this]() {
+        int n = WiFi.scanNetworks();
+        String json = "[";
+        for (int i = 0; i < n; i++)
         {
-            Serial.println("WiFi连接失败，开启配置门户...");
-            wifiManager.startConfigPortal(apName.c_str());
+            if (i) json += ",";
+            String ssid = WiFi.SSID(i);
+            ssid.replace("\\", "\\\\");
+            ssid.replace("\"", "\\\"");
+            json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(WiFi.RSSI(i)) +
+                    ",\"open\":" + String(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "true" : "false") + "}";
         }
+        json += "]";
+        WiFi.scanDelete();
+        configServer.send(200, "application/json", json);
+    });
+
+    // 保存 WiFi 凭据到 SPIFFS，重启后自动连接
+    configServer.on("/save", HTTP_POST, [this]() {
+        String ssid = configServer.arg("ssid");
+        String pass = configServer.arg("pass");
+        ssid.trim();
+        if (ssid.length() == 0)
+        {
+            configServer.send(200, "text/html; charset=utf-8",
+                              "<meta charset='utf-8'><h3>请先选择要连接的 WiFi</h3><a href='/'>返回</a>");
+            return;
+        }
+        saveWifiCredentials(ssid, pass);
+        String html = "<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                      "<body style='font-family:sans-serif;text-align:center;padding:40px'>"
+                      "<h3>配置已保存</h3><p>正在连接 <b>" + ssid + "</b> ...</p>"
+                      "<p>请关闭本页面，稍后到设备 MQTT 面板确认上线。</p></body>";
+        configServer.send(200, "text/html; charset=utf-8", html);
+        delay(500);
+        ESP.restart();
+    });
+
+    // 手机打开任意网址（含系统探测的 captive 地址）都跳回配网页
+    configServer.onNotFound([this]() {
+        configServer.sendHeader("Location", String("http://") + WiFi.softAPIP().toString(), true);
+        configServer.send(302, "text/plain", "");
+    });
+
+    Serial.println("配网门户已开启，等待手机连接...");
+    unsigned long portalStart = millis();
+    while (millis() - portalStart < 180000) // 3 分钟无人操作则重启
+    {
+        dnsServer.processNextRequest();
+        configServer.handleClient();
+        delay(1);
     }
+    Serial.println("配网门户超时，重启设备");
+    ESP.restart();
+}
+
+bool WifiManagerEx::loadWifiCredentials(String &ssid, String &pass)
+{
+    if (!SPIFFS.exists("/wifi.json"))
+        return false;
+    File f = SPIFFS.open("/wifi.json", "r");
+    if (!f)
+        return false;
+    JsonDocument doc;
+    bool ok = false;
+    if (deserializeJson(doc, f) == DeserializationError::Ok)
+    {
+        ssid = doc["ssid"] | "";
+        pass = doc["pass"] | "";
+        ok = ssid.length() > 0;
+    }
+    f.close();
+    return ok;
+}
+
+void WifiManagerEx::saveWifiCredentials(const String &ssid, const String &pass)
+{
+    JsonDocument doc;
+    doc["ssid"] = ssid;
+    doc["pass"] = pass;
+    File f = SPIFFS.open("/wifi.json", "w");
+    if (f)
+    {
+        serializeJson(doc, f);
+        f.close();
+        Serial.printf("WiFi 凭据已保存: %s\n", ssid.c_str());
+    }
+    else
+    {
+        Serial.println("保存 WiFi 凭据失败");
+    }
+}
+
+String WifiManagerEx::buildConfigPageHtml(const String &apName)
+{
+    return String(
+        "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>设备配网</title><style>"
+        "body{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;max-width:420px;margin:0 auto;padding:20px;background:#f5f6fa}"
+        "h2{font-size:20px;color:#222}label{display:block;margin:14px 0 6px;color:#555;font-size:14px}"
+        "select,input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:15px;background:#fff}"
+        "button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:8px;background:#007aff;color:#fff;font-size:16px}"
+        "button.ghost{background:#e9ecf1;color:#333;margin-top:8px;font-size:14px}"
+        ".dev{background:#fff;border-radius:10px;padding:12px;font-size:13px;color:#666;margin-bottom:8px;line-height:1.7}"
+        "#msg{color:#d9534f;font-size:13px;margin-top:10px;min-height:18px}"
+        "</style></head><body>"
+        "<h2>设备配网</h2>"
+        "<div class='dev'>设备编号：<b>" + apName + "</b><br>MQTT 主题：<b>" + deviceMqttBase() + "</b></div>"
+        "<form method='POST' action='/save' onsubmit='return checkForm()'>"
+        "<label>选择 WiFi</label>"
+        "<select id='ssid' name='ssid' required><option value=''>-- 点下方按钮扫描 --</option></select>"
+        "<button type='button' class='ghost' id='scanBtn' onclick='doScan()'>扫描 WiFi</button>"
+        "<label>WiFi 密码</label>"
+        "<input type='password' name='pass' id='pass' placeholder='没有密码可留空' autocomplete='off'>"
+        "<button type='submit'>保存并连接</button>"
+        "</form><div id='msg'></div><script>"
+        "function doScan(){"
+        "var m=document.getElementById('msg'),b=document.getElementById('scanBtn'),s=document.getElementById('ssid');"
+        "m.textContent='正在扫描…请稍候';m.style.color='#007aff';b.disabled=true;"
+        "fetch('/scan').then(function(r){return r.json()}).then(function(list){"
+        "b.disabled=false;m.textContent='';if(!list.length){m.textContent='没扫描到 WiFi，请重试';return;}"
+        "s.innerHTML='<option value=\"\">-- 请选择 --</option>';"
+        "list.forEach(function(w){var o=document.createElement('option');o.value=w.ssid;"
+        "o.textContent=w.ssid+(w.open?' (开放)':'')+' ('+w.rssi+'dBm)';s.appendChild(o);});"
+        "}).catch(function(){b.disabled=false;m.textContent='扫描失败，请重试';m.style.color='#d9534f';});}"
+        "function checkForm(){var s=document.getElementById('ssid');if(!s.value){"
+        "document.getElementById('msg').textContent='请先扫描并选择 WiFi';return false;}return true;}"
+        "</script></body></html>");
 }
 
 void WifiManagerEx::startWebServer()
