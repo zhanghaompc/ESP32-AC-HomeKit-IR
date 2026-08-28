@@ -30,18 +30,30 @@ void OtaManager::begin()
     {
         url = OTA_DEFAULT_URL;
         saveConfig();
-        return;
     }
-    File f = SPIFFS.open(OTA_CONFIG_FILE, "r");
-    if (!f)
+    else
     {
-        url = OTA_DEFAULT_URL;
-        return;
+        File f = SPIFFS.open(OTA_CONFIG_FILE, "r");
+        if (!f)
+        {
+            url = OTA_DEFAULT_URL;
+        }
+        else
+        {
+            JsonDocument doc;
+            if (deserializeJson(doc, f) == DeserializationError::Ok)
+                url = doc["url"] | OTA_DEFAULT_URL;
+            f.close();
+        }
     }
-    JsonDocument doc;
-    if (deserializeJson(doc, f) == DeserializationError::Ok)
-        url = doc["url"] | OTA_DEFAULT_URL;
-    f.close();
+
+    // 早期版本默认域名是 cdn.jsdelivr.net（国内不稳定），启动时自动迁移到 fastly
+    if (url.indexOf("cdn.jsdelivr.net") >= 0)
+    {
+        DBG("[OTA] 迁移 OTA 地址到 fastly 节点\n");
+        url.replace("cdn.jsdelivr.net", "fastly.jsdelivr.net");
+        saveConfig();
+    }
 }
 
 void OtaManager::saveConfig()
