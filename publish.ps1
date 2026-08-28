@@ -54,7 +54,9 @@ $otaJson = '{"version":"' + $version + '","url":"https://fastly.jsdelivr.net/gh/
 Write-Host "[3.5/5] 版本清单已生成: firmware\ota.json ($version)" -ForegroundColor Green
 
 # ---------- 4. git 提交 ----------
-Invoke-Git @('add', 'src', 'firmware', 'publish.ps1', 'publish.bat') | Out-Null
+# 注意：第一个提交先不带 ota.json，等拿到提交号后再单独提交清单，
+# 避免 master 上出现“新版本号 + @master 旧固件地址”的中间状态
+Invoke-Git @('add', 'src', 'firmware/esp32_wifi.bin', 'publish.ps1', 'publish.bat') | Out-Null
 $commitR = Invoke-Git @('commit', '-m', "bump firmware to v$version")
 if ($commitR.Code -eq 0) {
     Write-Host "[4/5] 已提交" -ForegroundColor Green
@@ -95,11 +97,26 @@ if ($pushR.Code -ne 0) {
     throw "git push 失败，请检查网络后重试"
 }
 
+# ---------- 5.5 自动把新地址写进设备（可选） ----------
 $sha = (git rev-parse HEAD).Trim()
+$devUrl = "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@$sha/firmware/esp32_wifi.bin"
+$devIp = Read-Host "输入设备 IP 可自动设置 OTA 地址（回车跳过，如 192.168.10.179）"
+if ($devIp) {
+    $enc = [uri]::EscapeDataString($devUrl)
+    try {
+        $resp = Invoke-WebRequest -Uri "http://${devIp}:8080/otaset?url=$enc" -UseBasicParsing -TimeoutSec 8
+        Write-Host "[5.5/5] 已自动设置设备 OTA 地址: $($resp.Content)" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "[5.5/5] 自动设置失败（设备可能不在线或 IP 不对）：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
 Write-Host "=========== 发布完成 ===========" -ForegroundColor Cyan
 Write-Host "固件版本: v$version"
 Write-Host "提交:     $sha"
+Write-Host "设备 OTA 地址: $devUrl"
 Write-Host "OTA 地址 (master):  https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp32_wifi.bin"
 Write-Host "OTA 地址 (固定):    https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@$sha/firmware/esp32_wifi.bin"
 Write-Host "=================================" -ForegroundColor Cyan
