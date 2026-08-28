@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 // 固件版本号（OTA 状态显示用）
-#define FW_VERSION "1.4.1"
+#define FW_VERSION "1.4.2"
 
 // ============================================================
 // 设备编号：基于 ESP32 eFuse MAC 的后 4 位十六进制
