@@ -32,6 +32,8 @@ private:
 public:
     // 公开变量，彻底解决权限报错
     bool deviceConnected = false;
+    // 命令响应转发钩子（BLE 指令的响应同时转发，例如 MQTT 远程控制）
+    void (*responseForwarder)(const String &) = nullptr;
 
     BleManager();
     void begin();

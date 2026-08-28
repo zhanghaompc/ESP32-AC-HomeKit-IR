@@ -2,12 +2,14 @@
 #include "BleManager.h"
 #ifndef BLE_ONLY
 #include "WifiManagerEx.h"
+#include "MqttManager.h"
 #endif
 #include "IrManager.h"
 #include "SensorManager.h"
 #include "LedManager.h"
 #include "TimerManager.h"
 #include "Debug.h"
+#include "PinConfig.h"
 
 // 其他必要库
 #ifndef BLE_ONLY
@@ -26,16 +28,15 @@
 BleManager bleManager;
 #ifndef BLE_ONLY
 WifiManagerEx wifiManager;
+MqttManager mqttManager;
 #endif
 IrManager irManager;
 SensorManager sensorManager;
 LedManager ledManager;
 TimerManager timerManager;
 
-// 硬件引脚定义
-#define KEY 0 // BOOT键，用于WiFi/BLE切换
-#define KEY1 4
-#define KEY2 14
+// 功能按键（引脚统一在 PinConfig.h 中管理）
+#define KEY KEY_PIN
 
 #define CMD_GET_PROTOCOL "get_protocol"
 #define PROTOCOL_PREFIX "protocol="
@@ -62,8 +63,8 @@ float acTargetTemp = 26.0;
 float enHumidity = 50.0;
 
 String lastProtocolName = "KELVINATOR"; // 默认协议
-const uint16_t kIrLed = 4; // 红外发射引脚16(usb)
-const uint16_t kRecvPin = 23;
+const uint16_t kIrLed = IR_TX_PIN;   // 红外发射
+const uint16_t kRecvPin = IR_RX_PIN; // 红外接收
 const uint16_t kCaptureBufferSize = 1024;
 const uint8_t kTimeout = 50;
 const uint16_t kMinUnknownSize = 12;
@@ -369,12 +370,16 @@ void disableWiFi()
 void handleBootButton()
 {
   static bool lastKeyState = HIGH;
+  static bool keySeenHigh = false;   // 开机后是否至少观察到一次“松开”（防止引脚被拉死导致误触发）
   static unsigned long lastDebounceTime = 0;
   static bool longPressPending = false;  // 超过短按时长、还没到重置时长的长按状态
   const unsigned long debounceDelay = 50;
 
   int currentKeyState = digitalRead(KEY);
   unsigned long currentTime = millis();
+
+  if (currentKeyState == HIGH)
+    keySeenHigh = true;
 
   if (currentKeyState != lastKeyState)
   {
@@ -387,6 +392,8 @@ void handleBootButton()
   {
     if (currentKeyState == LOW)
     {
+      if (!keySeenHigh)
+        return;   // 引脚从开机就一直是低电平：视为硬件异常，忽略假按键
       if (!buttonPressed && !isSwitching)
       {
         buttonPressed = true;
@@ -563,7 +570,7 @@ struct DEV_AC : Service::Thermostat
     Service::Fan *fan = new Service::Fan();
     new Characteristic::Active();
     fanSpeed = new Characteristic::RotationSpeed(0);
-    fanSpeed->setRange(0, 100, 20);
+    fanSpeed->setRange(0, 100, 25);   // 5 档：0/25/50/75/100
     fanDirection = new Characteristic::RotationDirection(0);
 
     pinMode(acPin, OUTPUT);
@@ -582,7 +589,7 @@ struct DEV_AC : Service::Thermostat
     }
     else if (fanSpeedPercent <= 25)
     {
-      acSpeed = static_cast<int>(stdAc::fanspeed_t::kMin);
+      acSpeed = static_cast<int>(stdAc::fanspeed_t::kLow);
     }
     else if (fanSpeedPercent <= 50)
     {
@@ -590,7 +597,7 @@ struct DEV_AC : Service::Thermostat
     }
     else if (fanSpeedPercent <= 75)
     {
-      acSpeed = static_cast<int>(stdAc::fanspeed_t::kMedium);
+      acSpeed = static_cast<int>(stdAc::fanspeed_t::kHigh);
     }
     else
     {
@@ -803,8 +810,6 @@ void key_init()
 {
   ledManager.begin();
   pinMode(KEY, INPUT_PULLUP);
-  pinMode(KEY1, INPUT_PULLUP);
-  pinMode(KEY2, INPUT_PULLUP);
 }
 
 // 按键扫描（保持不变）
@@ -861,6 +866,12 @@ void setup()
   // bleManager.begin();
 #ifndef BLE_ONLY
   wifiManager.begin();
+  mqttManager.begin();
+  // BLE 指令的响应同时转发给 MQTT（远程控制也能拿到结果）
+  bleManager.responseForwarder = [](const String &s)
+  {
+    mqttManager.publish(s);
+  };
 #endif
   irManager.begin();
   sensorManager.begin();
@@ -958,6 +969,7 @@ void loop()
     requestSwitchToBLE = false;
     Serial.println("正在切换到BLE模式...");
     wifiManager.disable();
+    mqttManager.disconnect();
     isBLEMode = true;
     isWiFiMode = false;
     ledManager.blinkBlue();
@@ -976,6 +988,7 @@ void loop()
   {
 #ifndef BLE_ONLY
     wifiManager.loop();
+    mqttManager.loop();
     homeSpan.poll();
     timerManager.loop();
 #else

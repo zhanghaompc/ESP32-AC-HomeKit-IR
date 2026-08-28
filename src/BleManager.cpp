@@ -189,6 +189,8 @@ void BleManager::sendProtocol(const String &protocol)
 // 注意：调用前必须已持有 xBleMutex（由 handleCommand 内的调用保证）。
 void BleManager::sendChunked(const String &data)
 {
+    if (responseForwarder)
+        responseForwarder(data);
     if (!deviceConnected || !pTxCharacteristic)
         return;
 
@@ -218,8 +220,8 @@ void BleManager::startAdvertising()
 // ====================== 核心指令处理（线程安全+匹配小程序） ======================
 void BleManager::handleCommand(const String &command)
 {
-    DBG("BLE命令: %s\n", command.c_str());
-    if (!pTxCharacteristic || !takeMutex())
+    DBG("命令: %s\n", command.c_str());
+    if (!takeMutex())
         return;
 
     // 关机

@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f2f7">
+  <title>MQTT 远程控制</title>
+  <style>
+    :root {
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --card-2: #f9f9fb;
+      --border: #e5e5ea;
+      --border-strong: #d1d1d6;
+      --text: #1c1c1e;
+      --text-2: #3c3c43;
+      --muted: #8e8e93;
+      --muted-2: #aeaeb2;
+      --accent: #007aff;
+      --accent-pressed: #0062cc;
+      --accent-soft: rgba(0, 122, 255, .1);
+      --ok: #34c759;
+      --warn: #ff9500;
+      --err: #ff3b30;
+      --shadow: 0 1px 3px rgba(0, 0, 0, .04), 0 4px 16px rgba(0, 0, 0, .06);
+      --radius: 20px;
+      --ease: cubic-bezier(.25, .1, .25, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html {
+      color-scheme: light;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      padding: 20px 16px 60px;
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 8px 4px 24px;
+    }
+
+    header .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #007aff, #5ac8fa);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 4px 12px rgba(0, 122, 255, .3);
+    }
+
+    header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+
+    header .sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    header .spacer {
+      flex: 1;
+    }
+
+    .pill {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--card-2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pill::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted-2);
+    }
+
+    .pill.on {
+      background: rgba(52, 199, 89, .12);
+      color: #248a3d;
+      border-color: transparent;
+    }
+
+    .pill.on::before {
+      background: var(--ok);
+      animation: breathe 2s ease-in-out infinite;
+    }
+
+    .pill.busy {
+      background: rgba(255, 149, 0, .12);
+      color: #b26500;
+      border-color: transparent;
+    }
+
+    .pill.busy::before {
+      background: var(--warn);
+    }
+
+    @keyframes breathe {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .4
+      }
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 22px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+
+    /* ========== 重点：增大折叠summary点击区域、字号 ========== */
+    .fold {
+      margin-bottom: 16px;
+    }
+
+    .fold>summary {
+      list-style: none;
+      cursor: pointer;
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 22px 22px;
+      /* 增大上下内边距，扩大点击热区 */
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      width: 100%;
+    }
+
+    .fold>summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .fold>summary .chev {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 18px;
+      transition: transform .25s var(--ease);
+    }
+
+    .fold[open]>summary {
+      border-radius: var(--radius) var(--radius) 0 0;
+      box-shadow: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .fold[open]>summary .chev {
+      transform: rotate(180deg);
+    }
+
+    .fold .fold-body {
+      background: var(--card);
+      border-radius: 0 0 var(--radius) var(--radius);
+      padding: 20px 22px 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .row:last-child {
+      margin-bottom: 0;
+    }
+
+    .row label {
+      width: 68px;
+      font-size: 15px;
+      color: var(--text-2);
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+
+    .row-flex-wrap {
+      flex-wrap: wrap;
+    }
+
+    input[type=text],
+    input[type=number],
+    input[type=password],
+    select {
+      flex: 1;
+      min-width: 0;
+      height: 44px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 15px;
+      padding: 0 14px;
+      outline: none;
+      transition: border-color .15s var(--ease), background-color .15s var(--ease);
+      font-family: inherit;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--accent);
+      background: #fff;
+    }
+
+    input::placeholder {
+      color: var(--muted-2);
+    }
+
+    select {
+      appearance: none;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%238e8e93" stroke-width="2.5"><path d="m6 9 6 6 6-6" /></svg>');
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--card-2);
+      color: var(--text);
+      font-family: inherit;
+      transition: transform .1s var(--ease), background-color .15s var(--ease);
+    }
+
+    button:active {
+      transform: scale(.96);
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    button.primary:active {
+      background: var(--accent-pressed);
+    }
+
+    button.danger {
+      background: transparent;
+      color: var(--err);
+      border: 1px solid rgba(255, 59, 48, .3);
+    }
+
+    @media (hover: hover) {
+      button:hover {
+        background: #ececf0;
+      }
+
+      button.primary:hover {
+        background: var(--accent-pressed);
+      }
+
+      button.danger:hover {
+        background: rgba(255, 59, 48, .06);
+      }
+    }
+
+    .switch {
+      position: relative;
+      width: 51px;
+      height: 31px;
+      background: #e9e9ea;
+      border-radius: 999px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color .25s var(--ease);
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 27px;
+      height: 27px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, .15), 0 1px 2px rgba(0, 0, 0, .1);
+      transition: transform .25s var(--ease);
+    }
+
+    .switch.on {
+      background: var(--ok);
+    }
+
+    .switch.on::after {
+      transform: translateX(20px);
+    }
+
+    .temp-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 0 24px;
+    }
+
+    .env {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .env-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .env-item svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+
+    .env b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .temp-control {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+
+    .temp-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--card-2);
+      color: var(--text);
+      font-size: 28px;
+      font-weight: 300;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+      transition: transform .1s var(--ease), background-color .15s var(--ease);
+    }
+
+    .temp-btn:active {
+      background: #e5e5ea;
+      transform: scale(.92);
+    }
+
+    .temp-display {
+      text-align: center;
+      min-width: 120px;
+    }
+
+    .temp-val {
+      font-size: 56px;
+      font-weight: 700;
+      letter-spacing: -.03em;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      line-height: 1;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .temp-val-input {
+      font-size: 56px;
+      width: 100px;
+      text-align: center;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-weight: 700;
+    }
+
+    .temp-val .unit {
+      font-size: 24px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-left: 2px;
+    }
+
+    .temp-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .power-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      margin: 0 0 12px;
+    }
+
+    .power-row .label {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .power-row .label small {
+      display: block;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .switch-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #powerText {
+      font-size: 15px;
+      color: var(--muted);
+      font-weight: 500;
+      min-width: 24px;
+    }
+
+    .seg-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin: 18px 0 10px;
+    }
+
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: var(--card-2);
+      padding: 4px;
+      border-radius: 14px;
+    }
+
+    .grid button {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 8px;
+      font-size: 14px;
+      font-weight: 500;
+      background: transparent;
+      color: var(--text-2);
+      border-radius: 10px;
+    }
+
+    .grid button.active {
+      background: #fff;
+      color: var(--accent);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .08), 0 1px 2px rgba(0, 0, 0, .04);
+    }
+
+    .grid button:active {
+      transform: none;
+    }
+
+    .protocol-row {
+      margin-top: 18px;
+    }
+
+    .protocol-row label {
+      width: auto;
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 8px;
+      word-break: break-all;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    .state-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .state-list div {
+      background: var(--card-2);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+
+    .state-list .k {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .state-list .v {
+      font-size: 18px;
+      font-weight: 600;
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .quick {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .quick button {
+      flex: 1;
+    }
+
+    .log {
+      background: #1c1c1e;
+      border-radius: 14px;
+      padding: 14px 16px;
+      max-height: 280px;
+      overflow-y: auto;
+      font-size: 12px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      line-height: 1.6;
+    }
+
+    .log p {
+      color: #5ac8fa;
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+
+    .log p.in {
+      color: #30d158;
+    }
+
+    .log p .t {
+      color: #636366;
+      margin-right: 10px;
+    }
+
+    @media (min-width: 640px) {
+      body {
+        max-width: 560px;
+        margin: 0 auto;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="logo">❄</div>
+    <div>
+      <h1>空调控制</h1>
+      <div class="sub">ESP8266/32 · MQTT 远程</div>
+    </div>
+    <div class="spacer"></div>
+    <span id="status" class="pill off">未连接</span>
+    <span id="devStatus" class="pill off">设备离线</span>
+  </header>
+  <!-- 增加 open 属性，页面加载自动展开连接配置 -->
+  <details class="fold" open>
+    <summary>连接配置 <span class="chev">▾</span></summary>
+    <div class="fold-body">
+      <div class="row"><label>服务器</label><input id="host" placeholder="broker-cn.emqx.io"></div>
+      <div class="row"><label>端口</label><input id="port" type="number" placeholder="8084"><label
+          style="width:auto">加密</label>
+        <div class="switch" id="tlsSwitch" onclick="toggleTls()"></div>
+      </div>
+      <div class="row"><label>路径</label><input id="path" placeholder="/mqtt"></div>
+      <div class="row"><label>用户名</label><input id="username" placeholder="留空 = 匿名"></div>
+      <div class="row"><label>密码</label><input id="password" type="password" placeholder="留空 = 匿名"></div>
+      <div class="row"><label>设备类型</label><select id="devType"><option value="esp32">ESP32 空调（ac/esp32ac…）</option><option value="esp8266">ESP8266 空调（ac/esp8266ac…）</option></select></div>
+      <div class="row"><label>主题</label><input id="topic" placeholder="ac/esp32acxxxx"></div>
+      <div class="row"><button id="btnConnect" class="primary" style="flex:1">连接</button><button id="btnDisconnect"
+          class="danger" style="flex:1">断开</button></div>
+    </div>
+  </details>
+  <div class="card">
+    <h2>空调控制</h2>
+    <!-- 电源挪到最上面 -->
+    <div class="power-row">
+      <div class="label">电源<small>点击开关空调</small></div>
+      <div class="switch-wrap">
+        <div class="switch" id="powerSwitch" onclick="togglePower()"></div><span id="powerText"
+          style="font-size:15px">关</span>
+      </div>
+    </div>
+
+    <div class="temp-section">
+      <div class="env" id="env"><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#007aff"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
+          </svg>室温 <b>--℃</b></span><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+          </svg>湿度 <b>--%</b></span><span class="env-item">协议 <b style="color:#007aff">--</b></span></div>
+      <div class="temp-control">
+        <button class="temp-btn" onclick="tempStep(-1)">−</button>
+        <div class="temp-display">
+          <div class="temp-val" id="tempValWrap">
+            <span id="tempVal">26</span><span class="unit">°C</span>
+          </div>
+          <div class="temp-label">目标温度（点击数字编辑）</div>
+        </div>
+        <button class="temp-btn" onclick="tempStep(1)">+</button>
+      </div>
+    </div>
+
+    <div class="seg-label">运行模式</div>
+    <div class="grid" id="modeGrid"></div>
+    <div class="seg-label">风速</div>
+    <div class="grid" id="speedGrid"></div>
+
+    <div class="row protocol-row row-flex-wrap">
+      <label>协议</label>
+      <select id="protocolSel"></select>
+      <button class="primary" onclick="startLearn()">协议学习</button>
+    </div>
+    <div class="status-text" id="learnStatus"></div>
+    <div class="status-text" id="pows"></div>
+  </div>
+
+  <details class="fold">
+    <summary>通用发布 <span class="chev">▾</span></summary>
+    <div class="fold-body">
+      <div class="row"><label>主题</label><input id="pubTopic" placeholder="topic/in"></div>
+      <div class="row"><label>内容</label><input id="pubPayload" placeholder="JSON 或文本"></div>
+      <div class="quick"><button onclick="quickPlug('1')">插座开</button><button
+          onclick="quickPlug('0')">插座关</button><button class="primary" onclick="pubSend()">发送</button></div>
+    </div>
+  </details>
+  <details class="fold">
+    <summary>消息日志 <span class="chev">▾</span></summary>
+    <div class="fold-body">
+      <div class="log" id="log"></div>
+    </div>
+  </details>
+
+  <script src="mqtt.min.js"></script>
+  <script>
+    const MODES = ["自动", "制冷", "制热", "除湿", "送风"];
+    const SPEEDS = ["自动", "低速", "中速", "高速", "最大"];
+    const PROTOCOLS = ["AC", "AMCOR", "AIRWELL", "AIRTON", "ARGO", "ARRIS", "BOSE", "BOSCH144", "CARRIER_AC", "CARRIER_AC40", "CARRIER_AC64", "CARRIER_AC84", "CARRIER_AC128", "CLIMABUTLER", "COOLIX", "COOLIX48", "CORONA_AC", "DAIKIN", "DAIKIN2", "DAIKIN64", "DAIKIN128", "DAIKIN152", "DAIKIN160", "DAIKIN176", "DAIKIN200", "DAIKIN216", "DAIKIN312", "DENON", "DELONGHI_AC", "DISH", "DOSHISHA", "ELECTRA_AC", "EPSON", "ECOCLIM", "ELITESCREENS", "GICABLE", "GLOBALCACHE", "GREE", "GOODWEATHER", "GORENJE", "HAIER_AC", "HAIER_AC160", "HAIER_AC176", "HAIER_AC_YRW02", "HITACHI_AC", "HITACHI_AC1", "HITACHI_AC2", "HITACHI_AC3", "HITACHI_AC264", "HITACHI_AC296", "HITACHI_AC344", "HITACHI_AC424", "INAX", "JVC", "KELON", "KELON168", "KELVINATOR", "LASERTAG", "LEGOPF", "LG", "LG2", "LUTRON", "MAGIQUEST", "MIDEA", "MIDEA24", "METZ", "MIRAGE", "MITSUBISHI", "MITSUBISHI2", "MITSUBISHI112", "MITSUBISHI136", "MITSUBISHI_AC", "MITSUBISHI_HEAVY_88", "MITSUBISHI_HEAVY_152", "MULTIBRACKETS", "MWM", "NEC", "NEC_LIKE", "NEOCLIMA", "NIKAI", "PANASONIC", "PANASONIC_AC", "PANASONIC_AC32", "PIONEER", "PRONTO", "RAW", "RC5", "RC5X", "RC6", "RCMM", "RHOSS", "SAMSUNG", "SAMSUNG36", "SAMSUNG_AC", "SANYO", "SANYO_AC", "SANYO_AC88", "SANYO_AC152", "SANYO_LC7461", "SAR", "SHARP", "SHARP_AC", "SHERWOOD", "SONY", "SONY_38K", "SYMPHONY", "TECHNIBEL_AC", "TECO", "TEKNOPOINT", "TCL96AC", "TCL112AC", "TOSHIBA_AC", "TOTO", "TRANSCOLD", "TRUMA", "TROTEC", "TROTEC_3550", "UNKNOWN", "UNUSED", "VESTEL_AC", "VOLTAS", "WHIRLPOOL_AC", "WHYNTER", "WOWWEE", "XMP", "YORK", "ZEPEAL"];
+    const PROTOCOL_CN = { AC: "通用空调", AMCOR: "安可达", AIRWELL: "艾尔威尔", AIRTON: "艾尔顿", ARGO: "阿尔戈", BOSCH144: "博世144位", CARRIER_AC: "开利", CARRIER_AC40: "开利40位", CARRIER_AC64: "开利64位", CARRIER_AC84: "开利84位", CARRIER_AC128: "开利128位", CLIMABUTLER: "气候管家", COOLIX: "美的", COOLIX48: "美的（48位）", CORONA_AC: "科罗纳", DAIKIN: "大金", DAIKIN2: "大金2", DAIKIN64: "大金64位", DAIKIN128: "大金128位", DAIKIN152: "大金152位", DAIKIN160: "大金160位", DAIKIN176: "大金176位", DAIKIN200: "大金200位", DAIKIN216: "大金216位", DAIKIN312: "大金312位", DENON: "天龙", DELONGHI_AC: "德龙", DOSHISHA: "同志社", ELECTRA_AC: "伊莱克特拉", EPSON: "爱普生", ECOCLIM: "环保气候", GREE: "格力", GOODWEATHER: "好天气", GORENJE: "戈兰尼", HAIER_AC: "海尔", HAIER_AC160: "海尔160位", HAIER_AC176: "海尔176位", HAIER_AC_YRW02: "海尔YRW02", HITACHI_AC: "日立", HITACHI_AC1: "日立1", HITACHI_AC2: "日立2", HITACHI_AC3: "日立3", HITACHI_AC264: "日立264位", HITACHI_AC296: "日立296位", HITACHI_AC344: "日立344位", HITACHI_AC424: "日立424位", INAX: "伊奈", JVC: "JVC", KELON: "科龙", KELON168: "科龙168位", KELVINATOR: "格力", LEGOPF: "乐高电源", LG: "LG", LG2: "LG2", MIDEA: "美的", MIDEA24: "美的24位", MIRAGE: "米拉奇", MITSUBISHI: "三菱", MITSUBISHI2: "三菱2", MITSUBISHI112: "三菱112位", MITSUBISHI136: "三菱136位", MITSUBISHI_AC: "三菱电机", MITSUBISHI_HEAVY_88: "三菱重工88位", MITSUBISHI_HEAVY_152: "三菱重工152位", NEC: "NEC", NEC_LIKE: "NEC兼容", NEOCLIMA: "新气候", NIKAI: "尼凯", PANASONIC: "松下", PANASONIC_AC: "松下空调", PANASONIC_AC32: "松下32位", PIONEER: "先锋", RHOSS: "罗斯", SAMSUNG: "三星", SAMSUNG36: "三星36位", SAMSUNG_AC: "三星空调", SANYO: "三洋", SANYO_AC: "三洋空调", SANYO_AC88: "三洋88位", SANYO_LC7461: "三洋LC7461", SHARP: "夏普", SHARP_AC: "夏普空调", SHERWOOD: "舍伍德", SONY: "索尼", SONY_38K: "索尼38K", SYMPHONY: "交响乐", TECHNIBEL_AC: "特奇贝尔", TECO: "东元", TCL96AC: "TCL96位", TCL112AC: "TCL112位", TOSHIBA_AC: "东芝空调", TOTO: "TOTO", TRANSCOLD: "创冷", TRUMA: "特鲁马", TROTEC: "特罗泰克", TROTEC_3550: "特罗泰克3550", UNKNOWN: "未知", UNUSED: "未使用", VESTEL_AC: "威斯特尔", VOLTAS: "沃尔塔斯", WHIRLPOOL_AC: "惠而浦", WHYNTER: "惠特", YORK: "约克", ZEPEAL: "泽皮尔" };
+
+    let client = null, temp = 26, modeIndex = 1, speedIndex = 2, powerOn = false, protocolName = "", curTemp = "--", curHumidity = "--";
+    let cfg = { host: "broker-cn.emqx.io", port: 8084, path: "/mqtt", tls: true, username: "", password: "", topic: "ac/esp32acxxxx", devType: "esp32" };
+    const $ = id => document.getElementById(id);
+
+    // ====== 点击温度数字直接编辑 =====
+    const tempWrap = $("tempValWrap");
+    const tempSpan = $("tempVal");
+    tempWrap.onclick = function (e) {
+      if (e.target.tagName === "INPUT") return;
+      const input = document.createElement("input");
+      input.className = "temp-val-input";
+      input.type = "number";
+      input.min = 16; input.max = 30;
+      input.value = temp;
+      tempSpan.style.display = "none";
+      tempWrap.insertBefore(input, tempSpan);
+      input.focus();
+
+      function finishEdit() {
+        let val = parseInt(input.value);
+        if (isNaN(val)) val = temp;
+        val = Math.max(16, Math.min(30, val));
+        temp = val;
+        input.remove();
+        tempSpan.style.display = "inline";
+        renderControls();
+        send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on");
+      }
+      input.onblur = finishEdit;
+      input.onkeydown = (ev) => { if (ev.key === 'Enter') finishEdit(); };
+    };
+
+    function loadCfg() { try { Object.assign(cfg, JSON.parse(localStorage.getItem("mqtt_cfg_web") || "{}")); } catch (e) { } $("host").value = cfg.host; $("port").value = cfg.port; $("path").value = cfg.path; $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : ""); $("username").value = cfg.username; $("password").value = cfg.password; $("topic").value = cfg.topic; $("devType").value = cfg.devType || "esp32"; applyDevType(); $("pubTopic").value = cfg.topic + "/in"; }
+    function saveCfg() { cfg.host = $("host").value.trim() || "broker-cn.emqx.io"; cfg.port = parseInt($("port").value) || 8084; cfg.path = $("path").value.trim() || "/mqtt"; cfg.username = $("username").value.trim(); cfg.password = $("password").value; cfg.topic = $("topic").value.trim() || (($("devType").value === "esp8266") ? "ac/esp8266acxxxx" : "ac/esp32acxxxx"); cfg.devType = $("devType").value; localStorage.setItem("mqtt_cfg_web", JSON.stringify(cfg)); $("pubTopic").value = cfg.topic + "/in"; }
+    function toggleTls() { cfg.tls = !cfg.tls; $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : ""); saveCfg(); }
+    function applyDevType() {const t = $("devType").value;const p = (t === "esp8266") ? "ac/esp8266ac" : "ac/esp32ac";let cur = $("topic").value.trim();let suffix = "";if (cur.indexOf("ac/esp32ac") === 0) suffix = cur.substring("ac/esp32ac".length);else if (cur.indexOf("ac/esp8266ac") === 0) suffix = cur.substring("ac/esp8266ac".length);if (suffix) $("topic").value = p + suffix;$("topic").placeholder = p + "xxxx";}    $("devType").onchange = function () { applyDevType(); saveCfg(); };
+    function setStatus(text, cls) { const s = $("status"); s.textContent = text; s.className = "pill " + cls; }
+    function setDevStatus(text, cls) { const s = $("devStatus"); s.textContent = text; s.className = "pill " + cls; }
+    const DEVICE_STATUS_TOPIC = () => cfg.topic + "/status";
+    const DEVICE_OUT_TOPIC = () => cfg.topic + "/out";
+    const DEVICE_TIMEOUT_MS = 15000; // 固件每 10 秒发一次 status，15 秒超时留 5 秒余量
+
+    let lastDeviceHeartbeat = 0;
+    let brokerConnectTime = 0;
+
+    function setDeviceOnline(online) {
+      setDevStatus(online ? "设备在线" : "设备离线", online ? "on" : "off");
+    }
+
+    function onDeviceStatus(msg) {
+      try {
+        const j = JSON.parse(msg);
+        if (typeof j.online === "boolean") {
+          if (j.online) {
+            lastDeviceHeartbeat = Date.now();
+            setDeviceOnline(true);
+          } else {
+            setDeviceOnline(false); // LWT / retained 明确离线
+          }
+          return;
+        }
+      } catch (e) {}
+
+      // 兼容没带 online 字段的旧固件：收到 status 本身也算一次心跳
+      lastDeviceHeartbeat = Date.now();
+      setDeviceOnline(true);
+    }
+
+    function checkDevicePresence() {
+      if (!client || !client.connected) {
+        setDeviceOnline(false);
+        return;
+      }
+
+      const now = Date.now();
+
+      if (lastDeviceHeartbeat && now - lastDeviceHeartbeat > DEVICE_TIMEOUT_MS) {
+        setDeviceOnline(false);
+      }
+
+      if (!lastDeviceHeartbeat && brokerConnectTime && now - brokerConnectTime > DEVICE_TIMEOUT_MS) {
+        setDeviceOnline(false);
+      }
+    }
+
+    setInterval(checkDevicePresence, 5000);
+    function log(msg, incoming) { const p = document.createElement("p"); if (incoming) p.className = "in"; const now = new Date().toTimeString().slice(0, 8); const t = document.createElement("span"); t.className = "t"; t.textContent = now; p.appendChild(t); p.appendChild(document.createTextNode(msg)); const box = $("log"); box.insertBefore(p, box.firstChild); while (box.children.length > 100) box.removeChild(box.lastChild); }
+    function buildUrl() { return (cfg.tls ? "wss" : "ws") + "://" + cfg.host + ":" + cfg.port + (cfg.path || "/mqtt"); }
+    function renderEnv() { const pv = protocolName ? (PROTOCOL_CN[protocolName] ? protocolName + " (" + PROTOCOL_CN[protocolName] + ")" : protocolName) : "--"; $("env").innerHTML = '<span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" /></svg>室温 <b>' + curTemp + '℃</b></span><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" /></svg>湿度 <b>' + curHumidity + '%</b></span><span class="env-item">协议 <b style="color:#007aff">' + pv + '</b></span>'; }
+    function renderControls() { $("tempVal").textContent = temp; $("powerSwitch").className = "switch" + (powerOn ? " on" : ""); $("powerText").textContent = powerOn ? "开" : "关"; document.querySelectorAll("#modeGrid button").forEach((b, i) => b.className = i === modeIndex ? "active" : ""); document.querySelectorAll("#speedGrid button").forEach((b, i) => b.className = i === speedIndex ? "active" : ""); if (protocolName) $("protocolSel").value = protocolName; }
+    function parseStatus(msg) { if (msg.indexOf("{") === 0) { try { const j = JSON.parse(msg); if (j.degrees !== undefined) temp = Math.round(j.degrees); if (j.temp !== undefined && j.degrees === undefined) temp = Math.round(j.temp); if (j.power !== undefined) powerOn = !!j.power; if (j.mode >= 0 && j.mode < MODES.length) modeIndex = j.mode; if (j.speed >= 0 && j.speed < SPEEDS.length) speedIndex = j.speed; if (j.protocol) protocolName = j.protocol; curTemp = j.temp !== undefined ? Number(j.temp).toFixed(1) : "--"; curHumidity = j.humidity !== undefined ? Number(j.humidity).toFixed(1) : "--"; renderEnv(); if (j.pows) $("pows").textContent = j.pows; renderControls(); } catch (e) { } } else if (msg.indexOf("temp=") === 0) { const t = msg.match(/temp=([\d.]+)/); if (t) temp = parseInt(t[1]); const m = msg.match(/mode=(\d+)/); if (m && parseInt(m[1]) < MODES.length) modeIndex = parseInt(m[1]); const s = msg.match(/speed=(\d+)/); if (s && parseInt(s[1]) < SPEEDS.length) speedIndex = parseInt(s[1]); const p = msg.match(/power=(on|off)/); if (p) powerOn = p[1] === "on"; renderControls(); } else if (msg.indexOf("protocol=") === 0) { protocolName = msg.substring(9); renderControls(); } else if (msg.indexOf("learn=") === 0) { if (msg === "learn=waiting") { $("learnStatus").textContent = "学习中…请按遥控器（10 秒超时）"; $("learnStatus").style.color = "var(--warn)"; } else if (msg.indexOf("learn=success:") === 0) { const p = msg.substring("learn=success:".length); protocolName = p; $("learnStatus").textContent = "学习成功：" + (PROTOCOL_CN[p] ? PROTOCOL_CN[p] + " (" + p + ")" : p); $("learnStatus").style.color = "var(--ok)"; $("protocolSel").value = p; renderControls(); } else if (msg === "learn=timeout") { $("learnStatus").textContent = "学习超时，未识别到信号，请重试"; $("learnStatus").style.color = "var(--err)"; } } }
+    function send(cmd) { if (!client || !client.connected) { alert("请先连接"); return; } const topic = cfg.topic + "/in"; client.publish(topic, cmd); log(topic + " : " + cmd); }
+    function startLearn() { $("learnStatus").textContent = "学习中…请按遥控器（10 秒超时）"; $("learnStatus").style.color = "var(--warn)"; send("learn=start"); }
+    function connect() { saveCfg(); if (client) { try { client.end(true); } catch (e) { } } setStatus("连接中…", "busy"); log("连接 " + buildUrl()); client = mqtt.connect(buildUrl(), { username: cfg.username || undefined, password: cfg.password || undefined, clientId: "web_mqtt_" + Math.random().toString(16).slice(2, 10), reconnectPeriod: 5000, connectTimeout: 10000, keepalive: 30 }); client.on("connect", () => { setStatus("已连接", "on"); lastDeviceHeartbeat = 0; brokerConnectTime = Date.now(); setDevStatus("检测中…", "busy"); log("已连接"); client.subscribe(DEVICE_STATUS_TOPIC(), { qos: 0 }); client.subscribe(DEVICE_OUT_TOPIC(), { qos: 0 }); }); client.on("message", (topic, payload) => { const msg = payload.toString(); log(topic + " : " + msg, true); if (topic === DEVICE_STATUS_TOPIC()) { onDeviceStatus(msg); } parseStatus(msg); }); client.on("close", () => { setStatus("未连接", "off"); setDeviceOnline(false); log("连接已断开"); }); client.on("error", e => { setStatus("错误", "off"); log("错误: " + ((e && e.message) || e)); }); }
+    function disconnect() { if (client) { try { client.end(true); } catch (e) { } client = null; } setStatus("未连接", "off"); setDeviceOnline(false); }
+    function togglePower() { powerOn = !powerOn; renderControls(); send(powerOn ? "temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on" : "power=off"); }
+    function tempStep(d) { temp = Math.min(30, Math.max(16, temp + d)); renderControls(); send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on"); }
+    function pubSend() { if (!client || !client.connected) { alert("请先连接"); return; } const topic = $("pubTopic").value.trim() || (cfg.topic + "/in"); client.publish(topic, $("pubPayload").value); log(topic + " : " + $("pubPayload").value); }
+    function quickPlug(v) { $("pubPayload").value = '{"m":"on","v":"' + v + '"}'; pubSend(); }
+    MODES.forEach((m, i) => { const b = document.createElement("button"); b.textContent = m; b.onclick = () => { modeIndex = i; renderControls(); send("temp=" + temp + ";mode=" + i + ";speed=" + speedIndex + ";power=on"); }; $("modeGrid").appendChild(b); });
+    SPEEDS.forEach((s, i) => { const b = document.createElement("button"); b.textContent = s; b.onclick = () => { speedIndex = i; renderControls(); send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + i + ";power=on"); }; $("speedGrid").appendChild(b); });
+    PROTOCOLS.forEach(p => { const o = document.createElement("option"); o.value = p; o.textContent = PROTOCOL_CN[p] ? PROTOCOL_CN[p] + " (" + p + ")" : p; $("protocolSel").appendChild(o); });
+    $("protocolSel").onchange = () => { const v = $("protocolSel").value; if (!v) return; protocolName = v; renderEnv(); send("protocol=" + v); };
+    $("btnConnect").onclick = connect; $("btnDisconnect").onclick = disconnect;
+    loadCfg(); renderControls();
+  </script>
+</body>
+
+</html>

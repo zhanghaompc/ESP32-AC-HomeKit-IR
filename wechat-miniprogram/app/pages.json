@@ -17,6 +17,12 @@
       "style": {
         "navigationBarTitleText": "更多信息"
       }
+    },
+    {
+      "path": "pages/mqtt/mqtt",
+      "style": {
+        "navigationBarTitleText": "MQTT远程控制"
+      }
     }
   ],
   "globalStyle": {

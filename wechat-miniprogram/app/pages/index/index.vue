@@ -109,6 +109,7 @@
         {{ isLearning ? '学习中…' : '协议学习' }}
       </button>
       <button class="mini-btn timer" :disabled="!isConnected" @tap="goToTimer">定时任务</button>
+      <button class="mini-btn timer" @tap="goMqtt">MQTT远程</button>
       <button class="mini-btn danger" :disabled="!isConnected" @tap="factoryReset">恢复出厂设置</button>
     </view>
 
@@ -1197,6 +1198,10 @@ export default {
         return
       }
       uni.navigateTo({ url: '/pages/timer/timer' })
+    },
+
+    goMqtt() {
+      uni.navigateTo({ url: '/pages/mqtt/mqtt' })
     },
 
     goHelp() {

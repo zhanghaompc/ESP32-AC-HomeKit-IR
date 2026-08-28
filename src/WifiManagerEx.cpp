@@ -1,6 +1,8 @@
 #include "WifiManagerEx.h"
 #include "LedManager.h"
 #include "TimerManager.h"
+#include "MqttManager.h"
+#include "DeviceConfig.h"
 #include <Arduino.h>
 #include <FastLED.h>
 #include <SPIFFS.h>
@@ -151,18 +153,27 @@ void WifiManagerEx::checkWiFiConnection()
 void WifiManagerEx::startConfigPortal()
 {
     WiFiManager wifiManager;
-    wifiManager.setTitle("永远相信美好的事物即将发生");
+    String apName = deviceApName();   // 例如 ESP32AC_A1B2
+    wifiManager.setTitle(("设备配网 " + apName).c_str());
     wifiManager.setTimeout(60);
+
+    // 在配网页面上显示设备编号和推荐 MQTT 主题（后缀小写，直接复制即可）
+    String deviceHtml = "<div style='padding:8px 0;font-size:14px;color:#666'>"
+                        "设备编号：<b style='color:#222'>" + apName + "</b><br>"
+                        "MQTT主题：<b style='color:#222'>" + deviceMqttBase() + "</b></div>";
+    WiFiManagerParameter deviceParam(deviceHtml.c_str());
+    wifiManager.addParameter(&deviceParam);
+
     // 门户是阻塞式的，主循环的LED刷新跑不到，改为常亮绿灯表示“配网等待中”，
     // 连接成功后由 checkWiFiConnection 熄灭
     ledManager.setColor(CRGB::Green);
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        if (!wifiManager.autoConnect("ESP32-AC"))
+        if (!wifiManager.autoConnect(apName.c_str()))
         {
             Serial.println("WiFi连接失败，开启配置门户...");
-            wifiManager.startConfigPortal("ESP32-AC");
+            wifiManager.startConfigPortal(apName.c_str());
         }
     }
 }
@@ -223,6 +234,19 @@ void WifiManagerEx::setupWebHandlers()
         }
         String json = "{\"temp\":" + String(envTemperature, 1) + ",\"humidity\":" + String(enHumidity, 1) + "}";
         server.send(200, "application/json", json); });
+
+    server.on("/mqttget", HTTP_GET, [this]()
+              { server.send(200, "application/json", mqttManager.getConfigJson()); });
+
+    server.on("/mqttset", HTTP_GET, [this]()
+              {
+        String host = server.arg("host");
+        String port = server.arg("port");
+        String user = server.arg("user");
+        String pass = server.arg("pass");
+        String topic = server.arg("topic");
+        mqttManager.setConfig(host, port.isEmpty() ? 1883 : (uint16_t)port.toInt(), user, pass, topic);
+        server.send(200, "text/plain", "MQTT config saved: " + mqttManager.getConfigJson()); });
 
     server.on("/power", HTTP_GET, [this]()
               {

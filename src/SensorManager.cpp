@@ -1,6 +1,8 @@
 #include "SensorManager.h"
 #include "Debug.h"
+#include "PinConfig.h"
 #include <Arduino.h>
+#include <Wire.h>
 
 extern float envTemperature;
 extern float enHumidity;
@@ -9,6 +11,7 @@ SensorManager::SensorManager() {}
 
 void SensorManager::begin()
 {
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
     if (aht.begin())
     {
         sensorOnline = true;

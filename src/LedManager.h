@@ -1,8 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <FastLED.h>
-
-#define LED_PIN 2
+#include "PinConfig.h"
 #define NUM_LEDS 1
 
 class LedManager
