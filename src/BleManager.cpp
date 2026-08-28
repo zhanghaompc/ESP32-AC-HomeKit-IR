@@ -321,11 +321,15 @@ void BleManager::handleCommand(const String &command)
         sendChunked(String("ota=start fw=") + otaManager.getVersion());
         String otaErr = "";
         int ret = otaManager.checkUpdate(otaErr);
-        if (ret == HTTP_UPDATE_OK)
+        if (ret == OTA_CHECK_OK)
         {
             sendChunked("ota=ok");
             delay(300);
             ESP.restart();
+        }
+        else if (ret == OTA_CHECK_NO_UPDATE)
+        {
+            sendChunked(String("ota=uptodate ") + otaManager.getVersion());
         }
         else
         {

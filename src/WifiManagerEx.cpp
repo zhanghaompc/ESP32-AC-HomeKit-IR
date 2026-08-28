@@ -362,11 +362,15 @@ void WifiManagerEx::setupWebHandlers()
     server.on("/ota", HTTP_GET, [this]() {
         String otaErr = "";
         int ret = otaManager.checkUpdate(otaErr);
-        if (ret == HTTP_UPDATE_OK)
+        if (ret == OTA_CHECK_OK)
         {
             server.send(200, "text/plain", "OTA ok, rebooting...");
             delay(300);
             ESP.restart();
+        }
+        else if (ret == OTA_CHECK_NO_UPDATE)
+        {
+            server.send(200, "text/plain", "OTA no update: " + otaErr);
         }
         else
         {

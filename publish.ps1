@@ -36,6 +36,12 @@ $dest = Join-Path $PSScriptRoot "firmware\esp32_wifi.bin"
 Copy-Item $bin $dest -Force
 Write-Host "[3/5] 固件已更新: firmware\esp32_wifi.bin" -ForegroundColor Green
 
+# ---------- 3.5 生成版本清单 ----------
+$otaPath = Join-Path $PSScriptRoot "firmware\ota.json"
+$otaJson = '{"version":"' + $version + '","url":"https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp32_wifi.bin"}'
+[System.IO.File]::WriteAllText($otaPath, $otaJson, $utf8NoBom)
+Write-Host "[3.5/5] 版本清单已生成: firmware\ota.json ($version)" -ForegroundColor Green
+
 # ---------- 4. git 提交 ----------
 git add src firmware publish.ps1 publish.bat
 git commit -m "bump firmware to v$version"

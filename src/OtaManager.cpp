@@ -74,9 +74,26 @@ int OtaManager::checkUpdate(String &errMsg)
     if (url.length() == 0)
     {
         errMsg = "OTA url is empty";
-        return HTTP_UPDATE_FAILED;
+        return OTA_CHECK_FAILED;
     }
 
+    // 1. 先拉取版本清单（ota.json，与固件同级），比较版本号
+    String remoteVersion, remoteUrl;
+    if (!fetchMetadata(remoteVersion, remoteUrl, errMsg))
+        return OTA_CHECK_FAILED;
+
+    DBG("[OTA] 本地版本 %s，远端版本 %s\n", FW_VERSION, remoteVersion.c_str());
+    if (!isVersionNewer(remoteVersion, FW_VERSION))
+    {
+        errMsg = "已是最新版本 " + String(FW_VERSION);
+        return OTA_CHECK_NO_UPDATE;
+    }
+
+    // 清单里若带了固件地址则用清单的地址（与版本一一对应）
+    if (remoteUrl.length() > 0)
+        url = remoteUrl;
+
+    // 2. 有新版，下载并升级（网络可能中途断流，最多重试 3 次）
     // 网络可能中途断流，最多重试 3 次
     for (int attempt = 1; attempt <= 3; attempt++)
     {
@@ -132,7 +149,77 @@ int OtaManager::checkUpdate(String &errMsg)
         }
         http.end();
         DBG("[OTA] 升级完成，写入 %d 字节\n", written);
-        return HTTP_UPDATE_OK;
+        return OTA_CHECK_OK;
     }
-    return HTTP_UPDATE_FAILED;
+    return OTA_CHECK_FAILED;
+}
+
+bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String &errMsg)
+{
+    // 版本清单放在固件同目录：xxx/esp32_wifi.bin -> xxx/ota.json
+    int slash = url.lastIndexOf('/');
+    if (slash < 0)
+    {
+        errMsg = "OTA url invalid";
+        return false;
+    }
+    String metaUrl = url.substring(0, slash + 1) + "ota.json";
+    DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
+
+    bool isHttps = metaUrl.startsWith("https://");
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    HTTPClient http;
+    http.setTimeout(15000);
+    bool beginOk;
+    if (isHttps)
+    {
+        secureClient.setInsecure();
+        beginOk = http.begin(secureClient, metaUrl);
+    }
+    else
+    {
+        beginOk = http.begin(plainClient, metaUrl);
+    }
+    if (!beginOk)
+    {
+        errMsg = "meta HTTP begin failed";
+        return false;
+    }
+    int code = http.GET();
+    if (code != HTTP_CODE_OK)
+    {
+        errMsg = "meta HTTP " + String(code);
+        http.end();
+        return false;
+    }
+    JsonDocument doc;
+    if (deserializeJson(doc, http.getStream()) != DeserializationError::Ok)
+    {
+        errMsg = "meta JSON 解析失败";
+        http.end();
+        return false;
+    }
+    remoteVersion = doc["version"] | "";
+    remoteUrl = doc["url"] | "";
+    http.end();
+    if (remoteVersion.length() == 0)
+    {
+        errMsg = "meta 缺少 version 字段";
+        return false;
+    }
+    return true;
+}
+
+bool OtaManager::isVersionNewer(const String &remote, const String &current)
+{
+    int r[3] = {0, 0, 0}, c[3] = {0, 0, 0};
+    sscanf(remote.c_str(), "%d.%d.%d", &r[0], &r[1], &r[2]);
+    sscanf(current.c_str(), "%d.%d.%d", &c[0], &c[1], &c[2]);
+    for (int i = 0; i < 3; i++)
+    {
+        if (r[i] != c[i])
+            return r[i] > c[i];
+    }
+    return false; // 完全相等 = 无需更新
 }
