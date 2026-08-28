@@ -47,7 +47,7 @@ $dest = Join-Path $PSScriptRoot "firmware\esp32_wifi.bin"
 Copy-Item $bin $dest -Force
 Write-Host "[3/5] 固件已更新: firmware\esp32_wifi.bin" -ForegroundColor Green
 
-# ---------- 3.5 生成版本清单 ----------
+# ---------- 3.5 生成版本清单（地址先用 master，第 4.5 步会改成固定提交号） ----------
 $otaPath = Join-Path $PSScriptRoot "firmware\ota.json"
 $otaJson = '{"version":"' + $version + '","url":"https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp32_wifi.bin"}'
 [System.IO.File]::WriteAllText($otaPath, $otaJson, $utf8NoBom)
@@ -65,6 +65,23 @@ elseif ($commitR.Out -match 'nothing to commit') {
 else {
     Write-Host $commitR.Out
     throw "git commit 失败，请检查上面的错误信息"
+}
+
+# ---------- 4.5 把清单里的固件地址固定到本次提交号，避免 CDN 新旧文件不同步 ----------
+$sha1 = (git rev-parse HEAD).Trim()
+$otaJson = '{"version":"' + $version + '","url":"https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@' + $sha1 + '/firmware/esp32_wifi.bin"}'
+[System.IO.File]::WriteAllText($otaPath, $otaJson, $utf8NoBom)
+Invoke-Git @('add', 'firmware/ota.json') | Out-Null
+$manifestR = Invoke-Git @('commit', '-m', "update ota manifest url @$sha1")
+if ($manifestR.Code -eq 0) {
+    Write-Host "[4.5/5] 版本清单地址已固定到提交 $sha1" -ForegroundColor Green
+}
+elseif ($manifestR.Out -match 'nothing to commit') {
+    Write-Host "[4.5/5] 版本清单无需修改" -ForegroundColor Yellow
+}
+else {
+    Write-Host $manifestR.Out
+    throw "git commit 清单失败，请检查上面的错误信息"
 }
 
 # ---------- 5. 推送 ----------
