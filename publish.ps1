@@ -11,14 +11,15 @@ Write-Host "==============================================" -ForegroundColor Cya
 
 # ---------- 1. 版本号 ----------
 $config = Join-Path $PSScriptRoot "src\DeviceConfig.h"
-$current = (Select-String -Path $config -Pattern '#define FW_VERSION "([^"]*)"').Matches[0].Groups[1].Value
+$configText = Get-Content $config -Raw -Encoding UTF8
+$current = [regex]::Match($configText, '#define FW_VERSION "([^"]*)"').Groups[1].Value
 $version = $args[0]
 if (-not $version) {
     $input = Read-Host "当前版本 $current ，输入新版本号（直接回车保持 $current）"
     $version = if ($input) { $input } else { $current }
 }
 Write-Host "[1/5] 版本号: $current -> $version" -ForegroundColor Green
-$newContent = (Get-Content $config -Raw) -replace '#define FW_VERSION "[^"]*"', ("#define FW_VERSION `"$version`"")
+$newContent = $configText -replace '#define FW_VERSION "[^"]*"', ("#define FW_VERSION `"$version`"")
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($config, $newContent, $utf8NoBom)
 
