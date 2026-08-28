@@ -21,8 +21,8 @@ public:
 };
 
 #define OTA_CONFIG_FILE "/ota.json"
-// 用 jsDelivr CDN 镜像 GitHub 文件，国内网络可稳定访问
-#define OTA_DEFAULT_URL "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp32_wifi.bin"
+// 用 jsDelivr CDN 镜像 GitHub 文件；fastly 节点国内更稳，且返回 Content-Length
+#define OTA_DEFAULT_URL "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp32_wifi.bin"
 
 void OtaManager::begin()
 {
@@ -322,49 +322,55 @@ bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String 
     String metaUrl = url.substring(0, slash + 1) + "ota.json";
     DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
 
-    bool isHttps = metaUrl.startsWith("https://");
-    WiFiClient plainClient;
-    WiFiClientSecure secureClient;
-    HTTPClient http;
-    http.setTimeout(15000);
-    bool beginOk;
-    if (isHttps)
+    // 国内网络可能断流，最多重试 3 次
+    for (int attempt = 1; attempt <= 3; attempt++)
     {
-        secureClient.setInsecure();
-        beginOk = http.begin(secureClient, metaUrl);
-    }
-    else
-    {
-        beginOk = http.begin(plainClient, metaUrl);
-    }
-    if (!beginOk)
-    {
-        errMsg = "meta HTTP begin failed";
-        return false;
-    }
-    int code = http.GET();
-    if (code != HTTP_CODE_OK)
-    {
-        errMsg = "meta HTTP " + String(code);
+        DBG("[OTA] 清单第 %d 次尝试\n", attempt);
+        bool isHttps = metaUrl.startsWith("https://");
+        WiFiClient plainClient;
+        WiFiClientSecure secureClient;
+        HTTPClient http;
+        http.setTimeout(15000);
+        bool beginOk;
+        if (isHttps)
+        {
+            secureClient.setInsecure();
+            beginOk = http.begin(secureClient, metaUrl);
+        }
+        else
+        {
+            beginOk = http.begin(plainClient, metaUrl);
+        }
+        if (!beginOk)
+        {
+            errMsg = "meta HTTP begin failed";
+            continue;
+        }
+        int code = http.GET();
+        if (code != HTTP_CODE_OK)
+        {
+            errMsg = "meta HTTP " + String(code);
+            http.end();
+            continue;
+        }
+        JsonDocument doc;
+        if (deserializeJson(doc, http.getStream()) != DeserializationError::Ok)
+        {
+            errMsg = "meta JSON 解析失败";
+            http.end();
+            continue;
+        }
+        remoteVersion = doc["version"] | "";
+        remoteUrl = doc["url"] | "";
         http.end();
-        return false;
+        if (remoteVersion.length() == 0)
+        {
+            errMsg = "meta 缺少 version 字段";
+            continue;
+        }
+        return true;
     }
-    JsonDocument doc;
-    if (deserializeJson(doc, http.getStream()) != DeserializationError::Ok)
-    {
-        errMsg = "meta JSON 解析失败";
-        http.end();
-        return false;
-    }
-    remoteVersion = doc["version"] | "";
-    remoteUrl = doc["url"] | "";
-    http.end();
-    if (remoteVersion.length() == 0)
-    {
-        errMsg = "meta 缺少 version 字段";
-        return false;
-    }
-    return true;
+    return false;
 }
 
 bool OtaManager::isVersionNewer(const String &remote, const String &current)
