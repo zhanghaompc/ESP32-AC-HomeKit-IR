@@ -319,7 +319,8 @@ void BleManager::handleCommand(const String &command)
     if (command == "ota=check")
     {
         sendChunked(String("ota=start fw=") + otaManager.getVersion());
-        int ret = otaManager.checkUpdate();
+        String otaErr = "";
+        int ret = otaManager.checkUpdate(otaErr);
         if (ret == HTTP_UPDATE_OK)
         {
             sendChunked("ota=ok");
@@ -328,7 +329,7 @@ void BleManager::handleCommand(const String &command)
         }
         else
         {
-            sendChunked(String("ota=fail:") + httpUpdate.getLastErrorString());
+            sendChunked(String("ota=fail:") + otaErr);
         }
         giveMutex();
         return;

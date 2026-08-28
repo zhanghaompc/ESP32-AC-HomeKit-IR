@@ -225,7 +225,8 @@ void WifiManagerEx::setupWebHandlers()
 
     // 云端 OTA：立即检查更新（http://IP:8080/ota）
     server.on("/ota", HTTP_GET, [this]() {
-        int ret = otaManager.checkUpdate();
+        String otaErr = "";
+        int ret = otaManager.checkUpdate(otaErr);
         if (ret == HTTP_UPDATE_OK)
         {
             server.send(200, "text/plain", "OTA ok, rebooting...");
@@ -234,7 +235,7 @@ void WifiManagerEx::setupWebHandlers()
         }
         else
         {
-            server.send(200, "text/plain", String("OTA fail: ") + httpUpdate.getLastErrorString());
+            server.send(200, "text/plain", "OTA fail: " + otaErr);
         }
     });
 

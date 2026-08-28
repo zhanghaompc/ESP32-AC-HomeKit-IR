@@ -25,7 +25,7 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <map>
-
+#include <DeviceConfig.h>
 // ======================== 对象化模块 ========================
 BleManager bleManager;
 #ifndef BLE_ONLY
@@ -66,8 +66,8 @@ float acTargetTemp = 26.0;
 float enHumidity = 50.0;
 
 String lastProtocolName = "KELVINATOR"; // 默认协议
-const uint16_t kIrLed = IR_TX_PIN;   // 红外发射
-const uint16_t kRecvPin = IR_RX_PIN; // 红外接收
+const uint16_t kIrLed = IR_TX_PIN;      // 红外发射
+const uint16_t kRecvPin = IR_RX_PIN;    // 红外接收
 const uint16_t kCaptureBufferSize = 1024;
 const uint8_t kTimeout = 50;
 const uint16_t kMinUnknownSize = 12;
@@ -83,7 +83,8 @@ volatile bool irLearning = false;
 
 void irEnableRecv()
 {
-  if (irReceiverEnabled) return;
+  if (irReceiverEnabled)
+    return;
   irrecv.enableIRIn();
   irReceiverEnabled = true;
   DBG("[IR] 红外接收已开启 (GPIO %d)\n", kRecvPin);
@@ -91,7 +92,8 @@ void irEnableRecv()
 
 void irDisableRecv()
 {
-  if (!irReceiverEnabled) return;
+  if (!irReceiverEnabled)
+    return;
   irrecv.disableIRIn();
   irReceiverEnabled = false;
   DBG("[IR] 红外接收已关闭\n");
@@ -373,9 +375,9 @@ void disableWiFi()
 void handleBootButton()
 {
   static bool lastKeyState = HIGH;
-  static bool keySeenHigh = false;   // 开机后是否至少观察到一次“松开”（防止引脚被拉死导致误触发）
+  static bool keySeenHigh = false; // 开机后是否至少观察到一次“松开”（防止引脚被拉死导致误触发）
   static unsigned long lastDebounceTime = 0;
-  static bool longPressPending = false;  // 超过短按时长、还没到重置时长的长按状态
+  static bool longPressPending = false; // 超过短按时长、还没到重置时长的长按状态
   const unsigned long debounceDelay = 50;
 
   int currentKeyState = digitalRead(KEY);
@@ -396,7 +398,7 @@ void handleBootButton()
     if (currentKeyState == LOW)
     {
       if (!keySeenHigh)
-        return;   // 引脚从开机就一直是低电平：视为硬件异常，忽略假按键
+        return; // 引脚从开机就一直是低电平：视为硬件异常，忽略假按键
       if (!buttonPressed && !isSwitching)
       {
         buttonPressed = true;
@@ -573,7 +575,7 @@ struct DEV_AC : Service::Thermostat
     Service::Fan *fan = new Service::Fan();
     new Characteristic::Active();
     fanSpeed = new Characteristic::RotationSpeed(0);
-    fanSpeed->setRange(0, 100, 25);   // 5 档：0/25/50/75/100
+    fanSpeed->setRange(0, 100, 25); // 5 档：0/25/50/75/100
     fanDirection = new Characteristic::RotationDirection(0);
 
     pinMode(acPin, OUTPUT);
@@ -878,7 +880,7 @@ void setup()
 #endif
   irManager.begin();
   sensorManager.begin();
-
+  Serial.println("版本号：" + String(FW_VERSION));
   // 详细日志开启时同时开启红外接收解析（串口打印收到的红外信号）
 #ifdef DEBUG_LOG
   irEnableRecv();
@@ -953,12 +955,14 @@ void sendEnvironmentDataIfNeeded()
 void loop()
 {
   delay(50);
+
   if (requestFactoryReset)
   {
     requestFactoryReset = false;
     factoryReset();
   }
-  if (irReceiverEnabled && !irLearning) IRrecvDump(); // 接收器开启且不在学习时才解析打印
+  if (irReceiverEnabled && !irLearning)
+    IRrecvDump(); // 接收器开启且不在学习时才解析打印
 #ifndef BLE_ONLY
   handleBootButton();
 

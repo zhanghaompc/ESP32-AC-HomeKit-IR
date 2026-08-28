@@ -8,7 +8,7 @@ public:
     String getUrl() const;
     String getVersion() const;
     bool setUrl(const String &url);
-    int checkUpdate();           // 从 URL 下载并升级，返回 t_httpUpdate_return
+    int checkUpdate(String &errMsg);   // 从 URL 下载并升级，失败时 errMsg 带原因
 
 private:
     String url = "";
