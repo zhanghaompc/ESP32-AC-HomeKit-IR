@@ -318,6 +318,8 @@ void BleManager::handleCommand(const String &command)
     // OTA 固件更新：从云端 URL 下载并升级
     if (command == "ota=check")
     {
+#ifdef BLE_ONLY
+        // BLE 版保持一次性下载（无确认流程）
         sendChunked(String("ota=start fw=") + otaManager.getVersion());
         String otaErr = "";
         int ret = otaManager.checkUpdate(otaErr);
@@ -335,9 +337,34 @@ void BleManager::handleCommand(const String &command)
         {
             sendChunked(String("ota=fail:") + otaErr);
         }
+#else
+        // WiFi 版：先只查版本，由面板确认后再 ota=go 下载
+        String otaErr = "", remoteVer = "";
+        int ret = otaManager.checkForUpdate(remoteVer, otaErr);
+        if (ret == OTA_CHECK_OK)
+            sendChunked(String("ota=found ") + remoteVer);
+        else if (ret == OTA_CHECK_NO_UPDATE)
+            sendChunked(String("ota=uptodate ") + otaManager.getVersion());
+        else
+            sendChunked(String("ota=fail:") + otaErr);
+#endif
         giveMutex();
         return;
     }
+
+#ifndef BLE_ONLY
+    // 面板确认后：开始异步下载（进度由主循环上报）
+    if (command == "ota=go")
+    {
+        String otaErr = "";
+        if (otaManager.beginDownload(otaManager.getPendingUrl(), otaErr))
+            sendChunked(String("ota=start fw=") + otaManager.getVersion());
+        else
+            sendChunked(String("ota=fail:") + otaErr);
+        giveMutex();
+        return;
+    }
+#endif
 
     // 协议设置
     if (command.startsWith("protocol="))

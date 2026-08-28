@@ -956,7 +956,7 @@ void sendEnvironmentDataIfNeeded()
 
 void loop()
 {
-  delay(50);
+  delay(otaManager.isDownloading() ? 1 : 50); // 下载固件时加快主循环，进度更流畅
 
   if (requestFactoryReset)
   {
@@ -1010,6 +1010,34 @@ void loop()
     mqttManager.loop();
     homeSpan.poll();
     timerManager.loop();
+
+    // OTA 异步下载驱动：分片读取 + MQTT 进度上报
+    {
+      static int lastProgress = -1;
+      String otaErr = "";
+      int pct = -1;
+      int st = otaManager.processDownload(otaErr, pct);
+      if (st == OTA_DL_RUNNING)
+      {
+        if (pct >= 0 && (lastProgress < 0 || pct - lastProgress >= 10))
+        {
+          lastProgress = pct;
+          mqttManager.publish(String("ota=progress ") + String(pct));
+        }
+      }
+      else if (st == OTA_DL_DONE)
+      {
+        lastProgress = -1;
+        mqttManager.publish("ota=ok");
+        delay(300);
+        ESP.restart();
+      }
+      else if (st == OTA_DL_ERROR)
+      {
+        lastProgress = -1;
+        mqttManager.publish(String("ota=fail:") + otaErr);
+      }
+    }
 #else
     timerManager.loop();
 #endif

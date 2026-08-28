@@ -351,6 +351,16 @@ void WifiManagerEx::setupWebHandlers()
                     "\",\"url\":\"" + otaManager.getUrl() + "\"}");
     });
 
+    // 只检查版本（不下载），返回 JSON 供调试/网页使用
+    server.on("/otacheck", HTTP_GET, [this]() {
+        String ver = "", err = "";
+        int ret = otaManager.checkForUpdate(ver, err);
+        String json = "{\"fw\":\"" + otaManager.getVersion() + "\",\"latest\":\"" +
+                      (ret == OTA_CHECK_OK ? ver : otaManager.getVersion()) +
+                      "\",\"update\":" + String(ret == OTA_CHECK_OK ? "true" : "false") + "}";
+        server.send(200, "application/json", json);
+    });
+
     // 云端 OTA：设置升级地址（http://IP:8080/otaset?url=...）
     server.on("/otaset", HTTP_GET, [this]() {
         String u = server.arg("url");
