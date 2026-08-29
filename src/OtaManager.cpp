@@ -45,12 +45,12 @@ static bool extractManifestString(JsonDocument &doc, const char *field, const ch
     if (node.is<JsonObjectConst>())
     {
         JsonObjectConst obj = node.as<JsonObjectConst>();
-        if (obj.containsKey(env))
+        if (obj[env].is<const char *>())
         {
             out = obj[env].as<const char *>();
             return out.length() > 0;
         }
-        if (obj.containsKey("default"))
+        if (obj["default"].is<const char *>())
         {
             out = obj["default"].as<const char *>();
             return out.length() > 0;
@@ -289,11 +289,12 @@ int OtaManager::processDownload(String &errMsg, int &progressPercent)
         return OTA_DL_IDLE;
 
     Stream &s = dlHttp->getStream();
-    uint8_t buf[2048];
+    // 更大的分片可显著减少 HTTPClient/Update 调用次数，提高 OTA 吞吐量。
+    uint8_t buf[8192];
     int got = 0;
     unsigned long t0 = millis();
-    // 每轮尽量读满缓冲区，但最多 40ms，避免长期占用主循环
-    while (got < (int)sizeof(buf) && millis() - t0 < 40)
+    // 每轮尽量读满缓冲区，但最多 80ms，仍保持 MQTT 心跳及时处理。
+    while (got < (int)sizeof(buf) && millis() - t0 < 80)
     {
         int avail = s.available();
         if (avail <= 0)

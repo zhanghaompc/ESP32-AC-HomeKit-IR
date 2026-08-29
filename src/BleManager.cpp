@@ -372,10 +372,15 @@ void BleManager::handleCommand(const String &command)
     if (command == "ota=go")
     {
         String otaErr = "";
+        // OTA 更新期间使用白色闪烁，给用户明确的设备侧提示。
+        ledManager.blinkWhite();
         if (otaManager.beginDownload(otaManager.getPendingUrl(), otaErr))
             sendChunked(String("ota=start fw=") + otaManager.getVersion());
         else
+        {
+            ledManager.blinkRed();
             sendChunked(String("ota=fail:") + otaErr);
+        }
         giveMutex();
         return;
     }

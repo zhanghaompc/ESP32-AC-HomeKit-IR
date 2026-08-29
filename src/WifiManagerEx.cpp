@@ -29,6 +29,9 @@ WifiManagerEx::WifiManagerEx() : server(8080) {}
 
 void WifiManagerEx::begin()
 {
+    // 允许 WiFi 驱动在短暂丢包/漫游后自动恢复，减少设备长期离线。
+    WiFi.setAutoReconnect(true);
+    WiFi.persistent(true);
 }
 
 void WifiManagerEx::enable()
@@ -149,7 +152,14 @@ void WifiManagerEx::checkWiFiConnection()
         if (millis() - lastAttemptTime >= retryInterval)
         {
             Serial.println("尝试重连...");
+            WiFi.setAutoReconnect(true);
             WiFi.reconnect();
+            if (WiFi.status() != WL_CONNECTED)
+            {
+                String ssid, pass;
+                if (loadWifiCredentials(ssid, pass) && ssid.length() > 0)
+                    WiFi.begin(ssid.c_str(), pass.c_str());
+            }
             lastAttemptTime = millis();
         }
     }

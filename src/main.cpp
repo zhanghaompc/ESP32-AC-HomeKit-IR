@@ -1028,6 +1028,8 @@ void loop()
       else if (st == OTA_DL_DONE)
       {
         lastProgress = -1;
+        ledManager.stopBlink();
+        ledManager.setColor(CRGB::Green);
         mqttManager.publish("ota=ok");
         delay(300);
         ESP.restart();
@@ -1035,6 +1037,7 @@ void loop()
       else if (st == OTA_DL_ERROR)
       {
         lastProgress = -1;
+        ledManager.blinkRed();
         mqttManager.publish(String("ota=fail:") + otaErr);
       }
     }
