@@ -161,12 +161,23 @@ try {
         $remoteSet = Invoke-GitSafe @('remote', 'set-url', 'origin', $remoteUrl)
         if ($remoteSet.Code -ne 0) { throw "设置 Git 远程地址失败：$($remoteSet.Output)" }
         Write-Host "[3/6] 使用 $Transport 推送到 GitHub origin/master ..." -ForegroundColor Green
-        $r = Invoke-GitSafe @('push', 'origin', 'master')
-        if ($r.Code -ne 0) {
-            if ($Transport -eq 'ssh') {
-                throw "SSH 推送失败：$($r.Output)`n请先配置 GitHub SSH Key，或临时使用 -Transport https。"
-            }
-            throw "git push 失败：$($r.Output)"
+        Write-Host '如果 GitHub 要求登录，请在弹出的凭据窗口中输入账号和 Personal Access Token。' -ForegroundColor DarkGray
+        $oldPrompt = $env:GIT_TERMINAL_PROMPT
+        $oldLowSpeed = $env:GIT_HTTP_LOW_SPEED_LIMIT
+        $oldLowSpeedTime = $env:GIT_HTTP_LOW_SPEED_TIME
+        $env:GIT_TERMINAL_PROMPT = '1'
+        $env:GIT_HTTP_LOW_SPEED_LIMIT = '1000'
+        $env:GIT_HTTP_LOW_SPEED_TIME = '30'
+        $oldGitEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & git push origin master
+        $pushCode = $LASTEXITCODE
+        $ErrorActionPreference = $oldGitEap
+        $env:GIT_TERMINAL_PROMPT = $oldPrompt
+        $env:GIT_HTTP_LOW_SPEED_LIMIT = $oldLowSpeed
+        $env:GIT_HTTP_LOW_SPEED_TIME = $oldLowSpeedTime
+        if ($pushCode -ne 0) {
+            throw "git push 失败（退出码 $pushCode）。请检查 GitHub 登录凭据、网络或代理设置。"
         }
     } else { Write-Host '[3/6] 已跳过 GitHub 推送' -ForegroundColor Yellow }
 
