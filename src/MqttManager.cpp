@@ -23,8 +23,8 @@ void MqttManager::begin()
 {
     loadConfig();
     client.setBufferSize(1024);
-    client.setKeepAlive(20);
-    client.setSocketTimeout(5);
+    client.setKeepAlive(30);
+    client.setSocketTimeout(15);
     client.setServer(host.c_str(), port);
     client.setCallback(MqttManager::onMessage);
     DBG("[MQTT] 初始化完成 host=%s port=%d topic=%s\n", host.c_str(), port, topic.c_str());
