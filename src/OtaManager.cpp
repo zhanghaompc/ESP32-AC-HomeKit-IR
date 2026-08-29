@@ -8,6 +8,64 @@
 #include <Update.h>
 #include <HTTPUpdate.h>
 
+#ifndef OTA_ENV_NAME
+#define OTA_ENV_NAME "esp32_wifi"
+#endif
+
+static const char *OTA_REPO = "zhanghaompc/ESP32-AC-HomeKit-IR";
+static const char *OTA_MANIFEST_BASES[] = {
+    "https://raw.githubusercontent.com/zhanghaompc/ESP32-AC-HomeKit-IR/master",
+    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
+    "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
+
+static String otaDefaultUrl()
+{
+    return String("https://fastly.jsdelivr.net/gh/") + OTA_REPO + "@master/firmware/" + OTA_ENV_NAME + ".bin";
+}
+
+static String otaManifestUrl(const char *base)
+{
+    return String(base) + "/firmware/ota_" + OTA_ENV_NAME + ".json";
+}
+
+static String otaLegacyManifestUrl(const char *base)
+{
+    return String(base) + "/firmware/ota.json";
+}
+
+static bool extractManifestString(JsonDocument &doc, const char *field, const char *env, String &out)
+{
+    JsonVariantConst node = doc[field];
+    if (node.is<const char *>())
+    {
+        out = node.as<const char *>();
+        return out.length() > 0;
+    }
+
+    if (node.is<JsonObjectConst>())
+    {
+        JsonObjectConst obj = node.as<JsonObjectConst>();
+        if (obj.containsKey(env))
+        {
+            out = obj[env].as<const char *>();
+            return out.length() > 0;
+        }
+        if (obj.containsKey("default"))
+        {
+            out = obj["default"].as<const char *>();
+            return out.length() > 0;
+        }
+    }
+
+    return false;
+}
+
+static bool fetchText(HTTPClient &http, String &text)
+{
+    text = http.getString();
+    return text.length() > 0;
+}
+
 // 把 Update 包装成 Stream，供 HTTPClient::writeToStream 使用（正确处理 chunked）
 class UpdateStream : public Stream
 {
@@ -21,14 +79,12 @@ public:
 };
 
 #define OTA_CONFIG_FILE "/ota.json"
-// 用 jsDelivr CDN 镜像 GitHub 文件；fastly 节点国内更稳，且返回 Content-Length
-#define OTA_DEFAULT_URL "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/esp32_wifi.bin"
 
 void OtaManager::begin()
 {
     if (!SPIFFS.exists(OTA_CONFIG_FILE))
     {
-        url = OTA_DEFAULT_URL;
+        url = otaDefaultUrl();
         saveConfig();
     }
     else
@@ -36,13 +92,13 @@ void OtaManager::begin()
         File f = SPIFFS.open(OTA_CONFIG_FILE, "r");
         if (!f)
         {
-            url = OTA_DEFAULT_URL;
+            url = otaDefaultUrl();
         }
         else
         {
             JsonDocument doc;
             if (deserializeJson(doc, f) == DeserializationError::Ok)
-                url = doc["url"] | OTA_DEFAULT_URL;
+                url = doc["url"] | otaDefaultUrl();
             f.close();
         }
     }
@@ -156,12 +212,6 @@ int OtaManager::checkUpdate(String &errMsg)
 
 int OtaManager::checkForUpdate(String &remoteVersion, String &errMsg)
 {
-    if (url.length() == 0)
-    {
-        errMsg = "OTA url is empty";
-        return OTA_CHECK_FAILED;
-    }
-
     String remoteUrl;
     if (!fetchMetadata(remoteVersion, remoteUrl, errMsg))
         return OTA_CHECK_FAILED;
@@ -173,8 +223,8 @@ int OtaManager::checkForUpdate(String &remoteVersion, String &errMsg)
         return OTA_CHECK_NO_UPDATE;
     }
 
-    // 记住待下载地址：清单里若带固件地址则优先用清单的（与版本一一对应）
-    pendingUrl = (remoteUrl.length() > 0) ? remoteUrl : url;
+    // 记住待下载地址：优先用清单里的（与版本一一对应）
+    pendingUrl = (remoteUrl.length() > 0) ? remoteUrl : (url.length() > 0 ? url : otaDefaultUrl());
     return OTA_CHECK_OK;
 }
 
@@ -324,63 +374,83 @@ void OtaManager::finishDownload()
 
 bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String &errMsg)
 {
-    // 版本清单放在固件同目录：xxx/esp32_wifi.bin -> xxx/ota.json
-    int slash = url.lastIndexOf('/');
-    if (slash < 0)
+    // 版本检查必须尽快返回，否则主循环不处理 MQTT 心跳会被 Broker 踢下线。
+    // 清单请求最多尝试 2 次，每个来源 8 秒。
+    for (size_t baseIndex = 0; baseIndex < sizeof(OTA_MANIFEST_BASES) / sizeof(OTA_MANIFEST_BASES[0]); baseIndex++)
     {
-        errMsg = "OTA url invalid";
-        return false;
-    }
-    String metaUrl = url.substring(0, slash + 1) + "ota.json";
-    DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
+        for (int legacy = 0; legacy < 2; legacy++)
+        {
+            String metaUrl = legacy ? otaLegacyManifestUrl(OTA_MANIFEST_BASES[baseIndex]) : otaManifestUrl(OTA_MANIFEST_BASES[baseIndex]);
+            DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
 
-    // 国内网络可能断流，最多重试 3 次
-    for (int attempt = 1; attempt <= 3; attempt++)
-    {
-        DBG("[OTA] 清单第 %d 次尝试\n", attempt);
-        bool isHttps = metaUrl.startsWith("https://");
-        WiFiClient plainClient;
-        WiFiClientSecure secureClient;
-        HTTPClient http;
-        http.setTimeout(15000);
-        bool beginOk;
-        if (isHttps)
-        {
-            secureClient.setInsecure();
-            beginOk = http.begin(secureClient, metaUrl);
+            for (int attempt = 1; attempt <= 2; attempt++)
+            {
+                DBG("[OTA] 清单第 %d 次尝试\n", attempt);
+                bool isHttps = metaUrl.startsWith("https://");
+                WiFiClient plainClient;
+                WiFiClientSecure secureClient;
+                HTTPClient http;
+                http.setTimeout(8000);
+                bool beginOk;
+                if (isHttps)
+                {
+                    secureClient.setInsecure();
+                    beginOk = http.begin(secureClient, metaUrl);
+                }
+                else
+                {
+                    beginOk = http.begin(plainClient, metaUrl);
+                }
+                if (!beginOk)
+                {
+                    errMsg = "meta HTTP begin failed";
+                    continue;
+                }
+
+                int code = http.GET();
+                if (code != HTTP_CODE_OK)
+                {
+                    errMsg = "meta HTTP " + String(code);
+                    http.end();
+                    continue;
+                }
+
+                String body;
+                if (!fetchText(http, body))
+                {
+                    errMsg = "meta JSON 读取失败";
+                    http.end();
+                    continue;
+                }
+
+                JsonDocument doc;
+                if (deserializeJson(doc, body) != DeserializationError::Ok)
+                {
+                    errMsg = "meta JSON 解析失败";
+                    http.end();
+                    continue;
+                }
+
+                remoteVersion = "";
+                remoteUrl = "";
+                extractManifestString(doc, "versions", OTA_ENV_NAME, remoteVersion);
+                if (!remoteVersion.length())
+                    extractManifestString(doc, "version", OTA_ENV_NAME, remoteVersion);
+                extractManifestString(doc, "urls", OTA_ENV_NAME, remoteUrl);
+                if (!remoteUrl.length())
+                    extractManifestString(doc, "url", OTA_ENV_NAME, remoteUrl);
+
+                http.end();
+                if (remoteVersion.length() == 0)
+                {
+                    errMsg = "meta 缺少 version 字段";
+                    continue;
+                }
+                if (remoteUrl.length() == 0)
+                    remoteUrl = otaDefaultUrl();
+                return true;
+            }
         }
-        else
-        {
-            beginOk = http.begin(plainClient, metaUrl);
-        }
-        if (!beginOk)
-        {
-            errMsg = "meta HTTP begin failed";
-            continue;
-        }
-        int code = http.GET();
-        if (code != HTTP_CODE_OK)
-        {
-            errMsg = "meta HTTP " + String(code);
-            http.end();
-            continue;
-        }
-        JsonDocument doc;
-        if (deserializeJson(doc, http.getStream()) != DeserializationError::Ok)
-        {
-            errMsg = "meta JSON 解析失败";
-            http.end();
-            continue;
-        }
-        remoteVersion = doc["version"] | "";
-        remoteUrl = doc["url"] | "";
-        http.end();
-        if (remoteVersion.length() == 0)
-        {
-            errMsg = "meta 缺少 version 字段";
-            continue;
-        }
-        return true;
     }
     return false;
 }
