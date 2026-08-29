@@ -38,6 +38,36 @@ function Read-Choice {
     }
 }
 
+function Ensure-GitHubHostKey {
+    $sshDir = Join-Path $env:USERPROFILE '.ssh'
+    $knownHosts = Join-Path $sshDir 'known_hosts'
+    if (-not (Test-Path -LiteralPath $sshDir)) {
+        New-Item -ItemType Directory -Path $sshDir -Force | Out-Null
+    }
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $existing = & ssh-keygen.exe -F github.com 2>$null
+    $ErrorActionPreference = $oldEap
+    if ($LASTEXITCODE -eq 0 -and $existing) { return }
+
+    Write-Host '本机尚未记录 GitHub SSH 主机指纹，正在获取官方主机密钥：' -ForegroundColor Yellow
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $scan = @(& ssh-keyscan.exe -t ed25519,ecdsa,rsa github.com 2>$null)
+    $scanCode = $LASTEXITCODE
+    $ErrorActionPreference = $oldEap
+    if ($scanCode -ne 0 -or $scan.Count -eq 0) {
+        throw '无法获取 github.com SSH 主机密钥，请检查网络或手动执行 ssh-keyscan。'
+    }
+
+    Write-Host ($scan -join "`n") -ForegroundColor DarkGray
+    $accept = Read-Host '请确认这是 GitHub 主机密钥，是否写入 known_hosts？(Y/N)'
+    if ($accept -notmatch '^[Yy]$') { throw '已取消 SSH 主机验证。' }
+    Add-Content -LiteralPath $knownHosts -Value ($scan -join "`n") -Encoding ASCII
+    Write-Host "已写入 $knownHosts" -ForegroundColor Green
+}
+
 $configPath = Join-Path $PSScriptRoot 'src\DeviceConfig.h'
 $configText = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8
 $match = [regex]::Match($configText, '#define FW_VERSION "([^"]+)"')
@@ -127,6 +157,7 @@ try {
     $sha = (git rev-parse HEAD).Trim()
 
     if (-not $SkipPush) {
+        if ($Transport -eq 'ssh') { Ensure-GitHubHostKey }
         $remoteUrl = if ($Transport -eq 'ssh') { 'git@github.com:zhanghaompc/ESP32-AC-HomeKit-IR.git' } else { 'https://github.com/zhanghaompc/ESP32-AC-HomeKit-IR.git' }
         $remoteSet = Invoke-GitSafe @('remote', 'set-url', 'origin', $remoteUrl)
         if ($remoteSet.Code -ne 0) { throw "设置 Git 远程地址失败：$($remoteSet.Output)" }
