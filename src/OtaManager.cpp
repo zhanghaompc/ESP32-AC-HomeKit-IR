@@ -17,8 +17,9 @@
 
 static const char *OTA_REPO = "zhanghaompc/ESP32-AC-HomeKit-IR";
 static const char *OTA_MANIFEST_BASES[] = {
-    // 设备端优先使用 cdn.jsdelivr.net，连接稳定且响应快；
-    // fastly 只作为兜底。raw 节点在某些网络下会长时间超时，不放在这里。
+    // GitHub Pages 几乎随上传立即更新，优先使用它读取版本清单；
+    // 下面两个 jsDelivr 源只作为兜底。
+    "https://zhanghaompc.github.io/mqtt-control",
     "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
     "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
 
