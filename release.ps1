@@ -51,21 +51,20 @@ function Ensure-GitHubHostKey {
     $ErrorActionPreference = $oldEap
     if ($LASTEXITCODE -eq 0 -and $existing) { return }
 
-    Write-Host '本机尚未记录 GitHub SSH 主机指纹，正在获取官方主机密钥：' -ForegroundColor Yellow
+    Write-Host '本机尚未记录 GitHub SSH 主机指纹，尝试使用 OpenSSH 自动保存（accept-new）…' -ForegroundColor Yellow
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $scan = @(& ssh-keyscan.exe -t ed25519,ecdsa,rsa github.com 2>$null)
-    $scanCode = $LASTEXITCODE
+    $probe = @(& ssh.exe -4 -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=8 -T git@github.com 2>&1 | ForEach-Object { $_.ToString() })
+    $probeCode = $LASTEXITCODE
     $ErrorActionPreference = $oldEap
-    if ($scanCode -ne 0 -or $scan.Count -eq 0) {
-        throw '无法获取 github.com SSH 主机密钥，请检查网络或手动执行 ssh-keyscan。'
+    if ($probeCode -eq 255 -and (($probe -join "`n") -match 'Permission denied \(publickey\)')) {
+        Write-Host 'GitHub 主机指纹已保存，但本机还没有可用的 GitHub SSH 密钥。' -ForegroundColor Yellow
+        throw '请先执行 ssh-keygen 创建密钥，并把 id_ed25519.pub 添加到 GitHub；也可使用 -Transport https。'
     }
-
-    Write-Host ($scan -join "`n") -ForegroundColor DarkGray
-    $accept = Read-Host '请确认这是 GitHub 主机密钥，是否写入 known_hosts？(Y/N)'
-    if ($accept -notmatch '^[Yy]$') { throw '已取消 SSH 主机验证。' }
-    Add-Content -LiteralPath $knownHosts -Value ($scan -join "`n") -Encoding ASCII
-    Write-Host "已写入 $knownHosts" -ForegroundColor Green
+    if ($probeCode -ne 0 -and -not (Test-Path -LiteralPath $knownHosts)) {
+        throw "无法验证 github.com SSH 主机：$($probe -join ' ')"
+    }
+    Write-Host 'GitHub SSH 主机指纹已准备完成。' -ForegroundColor Green
 }
 
 $configPath = Join-Path $PSScriptRoot 'src\DeviceConfig.h'
