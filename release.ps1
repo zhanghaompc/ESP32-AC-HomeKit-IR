@@ -7,6 +7,7 @@
 param(
     [string]$Environment,
     [string]$Version,
+    [string]$Transport = 'ssh',
     [switch]$SkipPush,
     [switch]$SkipDevice
 )
@@ -48,6 +49,9 @@ if (-not $Environment) {
 }
 if ($Environment -notin @('esp32_wifi', 'esp32dev', 'esp32_ble')) {
     throw "未知固件环境 '$Environment'。可选值：esp32_wifi、esp32dev、esp32_ble"
+}
+if ($Transport -notin @('ssh', 'https')) {
+    throw "未知 Git 传输方式 '$Transport'。可选值：ssh、https"
 }
 if (-not $Version) { $Version = Read-Host "当前版本 v$oldVersion，输入新版本号（回车使用 $oldVersion）" }
 if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $oldVersion }
@@ -123,9 +127,17 @@ try {
     $sha = (git rev-parse HEAD).Trim()
 
     if (-not $SkipPush) {
-        Write-Host '[3/6] 推送到 GitHub origin/master ...' -ForegroundColor Green
+        $remoteUrl = if ($Transport -eq 'ssh') { 'git@github.com:zhanghaompc/ESP32-AC-HomeKit-IR.git' } else { 'https://github.com/zhanghaompc/ESP32-AC-HomeKit-IR.git' }
+        $remoteSet = Invoke-GitSafe @('remote', 'set-url', 'origin', $remoteUrl)
+        if ($remoteSet.Code -ne 0) { throw "设置 Git 远程地址失败：$($remoteSet.Output)" }
+        Write-Host "[3/6] 使用 $Transport 推送到 GitHub origin/master ..." -ForegroundColor Green
         $r = Invoke-GitSafe @('push', 'origin', 'master')
-        if ($r.Code -ne 0) { throw "git push 失败：$($r.Output)" }
+        if ($r.Code -ne 0) {
+            if ($Transport -eq 'ssh') {
+                throw "SSH 推送失败：$($r.Output)`n请先配置 GitHub SSH Key，或临时使用 -Transport https。"
+            }
+            throw "git push 失败：$($r.Output)"
+        }
     } else { Write-Host '[3/6] 已跳过 GitHub 推送' -ForegroundColor Yellow }
 
     $otaUrl = "https://fastly.jsdelivr.net/gh/$repo@$firstSha/firmware/$Environment.bin"
