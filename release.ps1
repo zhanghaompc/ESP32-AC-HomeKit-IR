@@ -7,7 +7,7 @@
 param(
     [string]$Environment,
     [string]$Version,
-    [string]$Transport = 'ssh',
+    [string]$Transport = 'https',
     [switch]$SkipPush,
     [switch]$SkipDevice
 )
