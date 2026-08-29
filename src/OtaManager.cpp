@@ -17,7 +17,10 @@
 
 static const char *OTA_REPO = "zhanghaompc/ESP32-AC-HomeKit-IR";
 static const char *OTA_MANIFEST_BASES[] = {
-    // 发布脚本会生成该清单，优先使用单一 CDN，避免一次检查串行请求多个 HTTPS 源。
+    // 版本清单要尽量实时；raw.githubusercontent.com 几乎与 push 同步。
+    // Fastly 之前长期返回旧 master 缓存，因此只作为最后兜底。
+    "https://raw.githubusercontent.com/zhanghaompc/ESP32-AC-HomeKit-IR/master",
+    "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
     "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
 
 #define OTA_TASK_STACK_SIZE 10240
