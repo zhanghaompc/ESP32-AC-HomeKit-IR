@@ -17,9 +17,8 @@
 
 static const char *OTA_REPO = "zhanghaompc/ESP32-AC-HomeKit-IR";
 static const char *OTA_MANIFEST_BASES[] = {
-    // 版本清单要尽量实时；raw.githubusercontent.com 几乎与 push 同步。
-    // Fastly 之前长期返回旧 master 缓存，因此只作为最后兜底。
-    "https://raw.githubusercontent.com/zhanghaompc/ESP32-AC-HomeKit-IR/master",
+    // 设备端优先使用 cdn.jsdelivr.net，连接稳定且响应快；
+    // fastly 只作为兜底。raw 节点在某些网络下会长时间超时，不放在这里。
     "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
     "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
 
