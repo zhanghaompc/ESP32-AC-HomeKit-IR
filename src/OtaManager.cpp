@@ -7,6 +7,9 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <HTTPUpdate.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 #ifndef OTA_ENV_NAME
 #define OTA_ENV_NAME "esp32_wifi"
@@ -14,9 +17,37 @@
 
 static const char *OTA_REPO = "zhanghaompc/ESP32-AC-HomeKit-IR";
 static const char *OTA_MANIFEST_BASES[] = {
-    "https://raw.githubusercontent.com/zhanghaompc/ESP32-AC-HomeKit-IR/master",
-    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
-    "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
+    // 发布脚本会生成该清单，优先使用单一 CDN，避免一次检查串行请求多个 HTTPS 源。
+    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
+
+#define OTA_TASK_STACK_SIZE 10240
+
+class OtaManager;
+
+// 把 Update 包装成 Stream，供 OTA 任务里的 writeToStream 使用。
+// 与阻塞式 checkUpdate() 使用的 UpdateStream 不同，这个类会把写入进度回报给 OtaManager。
+class OtaUpdateStream : public Stream
+{
+public:
+    OtaUpdateStream(OtaManager *mgr, int len) : owner(mgr), contentLength(len) {}
+
+    size_t write(uint8_t b) override { return write(&b, 1); }
+    size_t write(const uint8_t *buffer, size_t size) override
+    {
+        size_t n = Update.write(const_cast<uint8_t *>(buffer), size);
+        if (n > 0 && owner != nullptr)
+            owner->onDownloadProgress(n, contentLength);
+        return n;
+    }
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
+
+private:
+    OtaManager *owner;
+    int contentLength;
+};
 
 static String otaDefaultUrl()
 {
@@ -62,26 +93,29 @@ static bool extractManifestString(JsonDocument &doc, const char *field, const ch
 
 static bool fetchText(HTTPClient &http, String &text)
 {
-    text = http.getString();
+    Stream &s = http.getStream();
+    text = "";
+    while (http.connected() || s.available())
+    {
+        while (s.available())
+        {
+            int c = s.read();
+            if (c < 0)
+                break;
+            text += (char)c;
+        }
+        delay(1);
+    }
     return text.length() > 0;
 }
-
-// 把 Update 包装成 Stream，供 HTTPClient::writeToStream 使用（正确处理 chunked）
-class UpdateStream : public Stream
-{
-public:
-    size_t write(uint8_t b) override { return Update.write(&b, 1); }
-    size_t write(const uint8_t *buffer, size_t size) override { return Update.write(const_cast<uint8_t *>(buffer), size); }
-    int available() override { return 0; }
-    int read() override { return -1; }
-    int peek() override { return -1; }
-    void flush() override {}
-};
 
 #define OTA_CONFIG_FILE "/ota.json"
 
 void OtaManager::begin()
 {
+    if (otaStateMutex == nullptr)
+        otaStateMutex = xSemaphoreCreateMutex();
+
     if (!SPIFFS.exists(OTA_CONFIG_FILE))
     {
         url = otaDefaultUrl();
@@ -130,8 +164,6 @@ String OtaManager::getVersion() const { return FW_VERSION; }
 
 String OtaManager::getPendingUrl() const { return pendingUrl; }
 
-bool OtaManager::isDownloading() const { return downloading; }
-
 bool OtaManager::setUrl(const String &u)
 {
     if (u.length() < 10 || !u.startsWith("http"))
@@ -148,64 +180,39 @@ int OtaManager::checkUpdate(String &errMsg)
     if (ret != OTA_CHECK_OK)
         return ret;
 
-    String dlUrl = pendingUrl; // 清单里的固定固件地址
-
-    // 2. 有新版，下载并升级（网络可能中途断流，最多重试 3 次）
+    // 有新版后，复用同一个异步 OTA 下载任务；这样网页 / BLE 的阻塞式入口
+    // 也不会在当前调用栈里执行 TLS/HTTP 下载，避免阻塞各自协议栈。
     for (int attempt = 1; attempt <= 3; attempt++)
     {
-        DBG("[OTA] 第 %d 次尝试，从 %s 下载...\n", attempt, dlUrl.c_str());
-
-        // 根据协议选择 HTTP / HTTPS 客户端
-        bool isHttps = dlUrl.startsWith("https://");
-        WiFiClient plainClient;
-        WiFiClientSecure secureClient;
-        HTTPClient http;
-        http.setTimeout(30000); // 读超时 30 秒，避免慢网速下提前中断
-        bool beginOk;
-        if (isHttps)
+        DBG("[OTA] 第 %d 次异步下载尝试\n", attempt);
+        String downloadErr = "";
+        if (!beginDownload(pendingUrl, downloadErr))
         {
-            secureClient.setInsecure();   // 跳过证书校验（家用可接受）
-            beginOk = http.begin(secureClient, dlUrl);
-        }
-        else
-        {
-            beginOk = http.begin(plainClient, dlUrl);
-        }
-        if (!beginOk)
-        {
-            errMsg = "HTTP begin failed";
-            DBG("[OTA] HTTP begin 失败\n");
-            continue;
-        }
-        int code = http.GET();
-        if (code != HTTP_CODE_OK)
-        {
-            errMsg = "HTTP GET " + String(code);
-            http.end();
+            errMsg = downloadErr;
+            delay(500);
             continue;
         }
 
-        if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+        unsigned long start = millis();
+        while (true)
         {
-            errMsg = "Update.begin err=" + String(Update.getError());
-            http.end();
-            continue;
+            String taskErr = "";
+            int pct = -1;
+            int st = processDownload(taskErr, pct);
+            if (st == OTA_DL_DONE)
+                return OTA_CHECK_OK;
+            if (st == OTA_DL_ERROR)
+            {
+                errMsg = taskErr;
+                break;
+            }
+            if (millis() - start > 180000UL)
+            {
+                errMsg = "OTA timeout";
+                break;
+            }
+            delay(20);
         }
-
-        // writeToStream 能正确处理 chunked 传输（jsDelivr 不返回 Content-Length）
-        UpdateStream us;
-        int written = http.writeToStream(&us);
-        // UPDATE_SIZE_UNKNOWN 时，必须传 true 告诉 end() 按实际写入字节收尾，
-        // 否则会与未知总大小比对失败，触发 UPDATE_ERROR_ABORT (err=12)
-        if (!Update.end(true))
-        {
-            errMsg = "Update.end err=" + String(Update.getError());
-            http.end();
-            continue;
-        }
-        http.end();
-        DBG("[OTA] 升级完成，写入 %d 字节\n", written);
-        return OTA_CHECK_OK;
     }
     return OTA_CHECK_FAILED;
 }
@@ -230,227 +237,277 @@ int OtaManager::checkForUpdate(String &remoteVersion, String &errMsg)
 
 bool OtaManager::beginDownload(const String &downloadUrl, String &errMsg)
 {
-    finishDownload();
-
-    bool isHttps = downloadUrl.startsWith("https://");
-    if (isHttps)
+    if (downloadUrl.length() < 10 || !downloadUrl.startsWith("http"))
     {
-        dlSecure = new WiFiClientSecure();
-        dlSecure->setInsecure();   // 跳过证书校验（家用可接受）
-        dlHttp = new HTTPClient();
-        dlHttp->setTimeout(30000);
-        if (!dlHttp->begin(*dlSecure, downloadUrl))
-        {
-            errMsg = "HTTP begin failed";
-            finishDownload();
-            return false;
-        }
-    }
-    else
-    {
-        dlPlain = new WiFiClient();
-        dlHttp = new HTTPClient();
-        dlHttp->setTimeout(30000);
-        if (!dlHttp->begin(*dlPlain, downloadUrl))
-        {
-            errMsg = "HTTP begin failed";
-            finishDownload();
-            return false;
-        }
-    }
-
-    int code = dlHttp->GET();
-    if (code != HTTP_CODE_OK)
-    {
-        errMsg = "HTTP GET " + String(code);
-        finishDownload();
+        errMsg = "invalid download url";
         return false;
     }
 
-    contentLength = dlHttp->getSize(); // 可能为 -1（chunked）
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+    if (otaStateMutex == nullptr)
+        otaStateMutex = xSemaphoreCreateMutex();
+
+    if (otaStateMutex != nullptr)
+        xSemaphoreTake(otaStateMutex, portMAX_DELAY);
+    if (otaTaskRunning)
     {
-        errMsg = "Update.begin err=" + String(Update.getError());
-        finishDownload();
+        if (otaStateMutex != nullptr)
+            xSemaphoreGive(otaStateMutex);
+        errMsg = "OTA already running";
+        return false;
+    }
+    otaTaskRunning = true;
+    if (otaStateMutex != nullptr)
+        xSemaphoreGive(otaStateMutex);
+
+    activeDownloadUrl = downloadUrl;
+    downloadBytes = 0;
+    setDownloadState(OTA_DL_RUNNING, -1, "");
+
+    BaseType_t created = xTaskCreate(otaTaskEntry, "otaTask", OTA_TASK_STACK_SIZE, this, 1, &otaTaskHandle);
+    if (created != pdPASS)
+    {
+        if (otaStateMutex != nullptr)
+        {
+            xSemaphoreTake(otaStateMutex, portMAX_DELAY);
+            otaTaskRunning = false;
+            xSemaphoreGive(otaStateMutex);
+        }
+        errMsg = "create ota task failed";
+        setDownloadState(OTA_DL_IDLE, -1, errMsg);
         return false;
     }
 
-    downloading = true;
-    totalRead = 0;
-    lastDataMs = millis();
-    DBG("[OTA] 开始下载: %s\n", downloadUrl.c_str());
+    DBG("[OTA] 开始异步下载: %s\n", downloadUrl.c_str());
     return true;
 }
 
 int OtaManager::processDownload(String &errMsg, int &progressPercent)
 {
-    progressPercent = -1;
-    if (!downloading || dlHttp == nullptr)
-        return OTA_DL_IDLE;
-
-    Stream &s = dlHttp->getStream();
-    // 更大的分片可显著减少 HTTPClient/Update 调用次数，提高 OTA 吞吐量。
-    uint8_t buf[8192];
-    int got = 0;
-    unsigned long t0 = millis();
-    // 每轮尽量读满缓冲区，但最多 80ms，仍保持 MQTT 心跳及时处理。
-    while (got < (int)sizeof(buf) && millis() - t0 < 80)
-    {
-        int avail = s.available();
-        if (avail <= 0)
-            break;
-        int toRead = (avail > (int)sizeof(buf) - got) ? (int)sizeof(buf) - got : avail;
-        int r = s.readBytes(buf + got, toRead);
-        if (r <= 0)
-            break;
-        got += r;
-    }
-
-    if (got > 0)
-    {
-        if (Update.write(buf, got) != (size_t)got)
-        {
-            errMsg = "Update.write err=" + String(Update.getError());
-            finishDownload();
-            return OTA_DL_ERROR;
-        }
-        totalRead += got;
-        lastDataMs = millis();
-    }
-
-    // 判断下载是否结束：已知长度读满，或连接关闭且无剩余数据
-    bool streamEnded = false;
-    if (contentLength > 0 && totalRead >= (unsigned long)contentLength)
-        streamEnded = true;
-    else if (s.available() == 0 && !dlHttp->connected())
-        streamEnded = true;
-
-    if (streamEnded)
-    {
-        if (!Update.end(true))
-        {
-            errMsg = "Update.end err=" + String(Update.getError());
-            finishDownload();
-            return OTA_DL_ERROR;
-        }
-        DBG("[OTA] 下载完成，共 %lu 字节\n", totalRead);
-        finishDownload();
-        return OTA_DL_DONE;
-    }
-
-    if (millis() - lastDataMs > 20000)
-    {
-        errMsg = "下载超时";
-        finishDownload();
-        return OTA_DL_ERROR;
-    }
-
-    if (contentLength > 0)
-        progressPercent = (int)(totalRead * 100 / contentLength);
-    return OTA_DL_RUNNING;
+    OtaDownloadStatus st = OTA_DL_IDLE;
+    int pct = -1;
+    String err = "";
+    getDownloadState(st, pct, err);
+    errMsg = err;
+    progressPercent = pct;
+    return (int)st;
 }
 
-void OtaManager::finishDownload()
+bool OtaManager::isDownloading()
 {
-    downloading = false;
-    if (dlHttp != nullptr)
+    OtaDownloadStatus st = OTA_DL_IDLE;
+    int pct = -1;
+    String err = "";
+    getDownloadState(st, pct, err);
+    return st == OTA_DL_RUNNING;
+}
+
+void OtaManager::setDownloadState(OtaDownloadStatus st, int pct, const String &err)
+{
+    if (otaStateMutex != nullptr)
+        xSemaphoreTake(otaStateMutex, portMAX_DELAY);
+    downloadStatus = st;
+    downloadProgress = pct;
+    downloadError = err;
+    if (otaStateMutex != nullptr)
+        xSemaphoreGive(otaStateMutex);
+}
+
+void OtaManager::getDownloadState(OtaDownloadStatus &st, int &pct, String &err)
+{
+    if (otaStateMutex != nullptr)
+        xSemaphoreTake(otaStateMutex, portMAX_DELAY);
+    st = downloadStatus;
+    pct = downloadProgress;
+    err = downloadError;
+    if (otaStateMutex != nullptr)
+        xSemaphoreGive(otaStateMutex);
+}
+
+void OtaManager::onDownloadProgress(size_t written, int contentLength)
+{
+    downloadBytes += written;
+    int pct = -1;
+    if (contentLength > 0)
+        pct = (int)((downloadBytes * 100) / contentLength);
+    setDownloadState(OTA_DL_RUNNING, pct, "");
+}
+
+void OtaManager::otaTaskEntry(void *arg)
+{
+    if (arg == nullptr)
+        vTaskDelete(nullptr);
+    ((OtaManager *)arg)->otaTaskRun();
+}
+
+void OtaManager::otaTaskRun()
+{
+    String err = "";
+    bool success = false;
+    String dlUrl = activeDownloadUrl;
+
+    HTTPClient http;
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    http.setTimeout(15000);
+
+    do
     {
-        dlHttp->end();
-        delete dlHttp;
-        dlHttp = nullptr;
-    }
-    if (dlPlain != nullptr)
+        bool beginOk = false;
+        if (dlUrl.startsWith("https://"))
+        {
+            secureClient.setInsecure();
+            beginOk = http.begin(secureClient, dlUrl);
+        }
+        else
+        {
+            beginOk = http.begin(plainClient, dlUrl);
+        }
+        if (!beginOk)
+        {
+            err = "HTTP begin failed";
+            break;
+        }
+
+        int code = http.GET();
+        if (code != HTTP_CODE_OK)
+        {
+            err = "HTTP GET " + String(code);
+            http.end();
+            break;
+        }
+
+        int contentLength = http.getSize();
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN))
+        {
+            err = "Update.begin err=" + String(Update.getError());
+            http.end();
+            break;
+        }
+
+        OtaUpdateStream stream(this, contentLength);
+        int written = http.writeToStream(&stream);
+        if (written < 0)
+        {
+            err = "HTTP stream error";
+            Update.abort();
+            http.end();
+            break;
+        }
+
+        if (!Update.end(true))
+        {
+            err = "Update.end err=" + String(Update.getError());
+            http.end();
+            break;
+        }
+
+        http.end();
+        success = true;
+        setDownloadState(OTA_DL_DONE, 100, "");
+    } while (false);
+
+    if (otaStateMutex != nullptr)
     {
-        delete dlPlain;
-        dlPlain = nullptr;
+        xSemaphoreTake(otaStateMutex, portMAX_DELAY);
+        otaTaskRunning = false;
+        xSemaphoreGive(otaStateMutex);
     }
-    if (dlSecure != nullptr)
-    {
-        delete dlSecure;
-        dlSecure = nullptr;
-    }
-    totalRead = 0;
-    contentLength = -1;
+
+    if (!success)
+        setDownloadState(OTA_DL_ERROR, -1, err);
+
+    otaTaskHandle = nullptr;
+    vTaskDelete(nullptr);
 }
 
 bool OtaManager::fetchMetadata(String &remoteVersion, String &remoteUrl, String &errMsg)
 {
     // 版本检查必须尽快返回，否则主循环不处理 MQTT 心跳会被 Broker 踢下线。
-    // 清单请求最多尝试 2 次，每个来源 8 秒。
+    // 只请求一个当前清单，避免 MQTT 回调里串行访问多个 HTTPS 源触发看门狗。
     for (size_t baseIndex = 0; baseIndex < sizeof(OTA_MANIFEST_BASES) / sizeof(OTA_MANIFEST_BASES[0]); baseIndex++)
     {
-        for (int legacy = 0; legacy < 2; legacy++)
+        String metaUrl = otaManifestUrl(OTA_MANIFEST_BASES[baseIndex]);
+        // jsDelivr/Fastly 可能缓存 master 清单，追加时间戳确保每次检查拿到最新版本。
+        metaUrl += (metaUrl.indexOf('?') >= 0 ? "&" : "?");
+        metaUrl += "t=" + String(millis());
+        DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
+
+        for (int attempt = 1; attempt <= 1; attempt++)
         {
-            String metaUrl = legacy ? otaLegacyManifestUrl(OTA_MANIFEST_BASES[baseIndex]) : otaManifestUrl(OTA_MANIFEST_BASES[baseIndex]);
-            DBG("[OTA] 读取版本清单 %s\n", metaUrl.c_str());
-
-            for (int attempt = 1; attempt <= 2; attempt++)
+            DBG("[OTA] 清单第 %d 次尝试\n", attempt);
+            bool isHttps = metaUrl.startsWith("https://");
+            WiFiClient plainClient;
+            WiFiClientSecure secureClient;
+            HTTPClient http;
+            http.setTimeout(2500);
+            secureClient.setTimeout(2500);
+            http.useHTTP10(true);
+            http.addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            http.addHeader("Pragma", "no-cache");
+            bool beginOk;
+            if (isHttps)
             {
-                DBG("[OTA] 清单第 %d 次尝试\n", attempt);
-                bool isHttps = metaUrl.startsWith("https://");
-                WiFiClient plainClient;
-                WiFiClientSecure secureClient;
-                HTTPClient http;
-                http.setTimeout(8000);
-                bool beginOk;
-                if (isHttps)
-                {
-                    secureClient.setInsecure();
-                    beginOk = http.begin(secureClient, metaUrl);
-                }
-                else
-                {
-                    beginOk = http.begin(plainClient, metaUrl);
-                }
-                if (!beginOk)
-                {
-                    errMsg = "meta HTTP begin failed";
-                    continue;
-                }
-
-                int code = http.GET();
-                if (code != HTTP_CODE_OK)
-                {
-                    errMsg = "meta HTTP " + String(code);
-                    http.end();
-                    continue;
-                }
-
-                String body;
-                if (!fetchText(http, body))
-                {
-                    errMsg = "meta JSON 读取失败";
-                    http.end();
-                    continue;
-                }
-
-                JsonDocument doc;
-                if (deserializeJson(doc, body) != DeserializationError::Ok)
-                {
-                    errMsg = "meta JSON 解析失败";
-                    http.end();
-                    continue;
-                }
-
-                remoteVersion = "";
-                remoteUrl = "";
-                extractManifestString(doc, "versions", OTA_ENV_NAME, remoteVersion);
-                if (!remoteVersion.length())
-                    extractManifestString(doc, "version", OTA_ENV_NAME, remoteVersion);
-                extractManifestString(doc, "urls", OTA_ENV_NAME, remoteUrl);
-                if (!remoteUrl.length())
-                    extractManifestString(doc, "url", OTA_ENV_NAME, remoteUrl);
-
-                http.end();
-                if (remoteVersion.length() == 0)
-                {
-                    errMsg = "meta 缺少 version 字段";
-                    continue;
-                }
-                if (remoteUrl.length() == 0)
-                    remoteUrl = otaDefaultUrl();
-                return true;
+                secureClient.setInsecure();
+                beginOk = http.begin(secureClient, metaUrl);
             }
+            else
+                beginOk = http.begin(plainClient, metaUrl);
+            if (!beginOk)
+            {
+                errMsg = "meta HTTP begin failed";
+                continue;
+            }
+
+            int code = http.GET();
+            if (code != HTTP_CODE_OK)
+            {
+                errMsg = "meta HTTP " + String(code);
+                http.end();
+                continue;
+            }
+
+            int metaSize = http.getSize();
+            if (metaSize > 8192)
+            {
+                errMsg = "meta 响应过大";
+                http.end();
+                continue;
+            }
+
+            String body;
+            if (!fetchText(http, body))
+            {
+                errMsg = "meta JSON 读取失败";
+                http.end();
+                continue;
+            }
+
+            JsonDocument doc;
+            if (deserializeJson(doc, body) != DeserializationError::Ok)
+            {
+                errMsg = "meta JSON 解析失败";
+                http.end();
+                continue;
+            }
+
+            remoteVersion = "";
+            remoteUrl = "";
+            extractManifestString(doc, "versions", OTA_ENV_NAME, remoteVersion);
+            if (!remoteVersion.length())
+                extractManifestString(doc, "version", OTA_ENV_NAME, remoteVersion);
+            extractManifestString(doc, "urls", OTA_ENV_NAME, remoteUrl);
+            if (!remoteUrl.length())
+                extractManifestString(doc, "url", OTA_ENV_NAME, remoteUrl);
+
+            http.end();
+            if (remoteVersion.length() == 0)
+            {
+                errMsg = "meta 缺少 version 字段";
+                continue;
+            }
+            if (remoteUrl.length() == 0)
+                remoteUrl = otaDefaultUrl();
+            return true;
         }
     }
     return false;

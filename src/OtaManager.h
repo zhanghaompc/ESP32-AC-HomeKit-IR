@@ -1,5 +1,8 @@
 #pragma once
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 class HTTPClient;
 class WiFiClient;
@@ -34,22 +37,28 @@ public:
     int checkForUpdate(String &remoteVersion, String &errMsg); // 只查版本，不下载（MQTT 确认流程用）
     bool beginDownload(const String &downloadUrl, String &errMsg); // 开始异步下载
     int processDownload(String &errMsg, int &progressPercent);    // 主循环分片驱动，返回 OtaDownloadStatus
-    bool isDownloading() const;
+    bool isDownloading();
+    void onDownloadProgress(size_t written, int contentLength);
 
 private:
     String url = "";
     String pendingUrl = "";    // checkForUpdate 找到的待下载地址
-    HTTPClient *dlHttp = nullptr;
-    WiFiClient *dlPlain = nullptr;
-    WiFiClientSecure *dlSecure = nullptr;
-    bool downloading = false;
-    unsigned long totalRead = 0;
-    unsigned long lastDataMs = 0;
-    int contentLength = -1;
+    String activeDownloadUrl = "";
+    TaskHandle_t otaTaskHandle = nullptr;
+    SemaphoreHandle_t otaStateMutex = nullptr;
+    volatile OtaDownloadStatus downloadStatus = OTA_DL_IDLE;
+    volatile int downloadProgress = -1;
+    String downloadError = "";
+    bool otaTaskRunning = false;
+    unsigned long downloadBytes = 0;
+
     void saveConfig();
-    void finishDownload();
     bool fetchMetadata(String &remoteVersion, String &remoteUrl, String &errMsg);
     bool isVersionNewer(const String &remote, const String &current);
+    void setDownloadState(OtaDownloadStatus st, int pct, const String &err);
+    void getDownloadState(OtaDownloadStatus &st, int &pct, String &err);
+    static void otaTaskEntry(void *arg);
+    void otaTaskRun();
 };
 
 extern OtaManager otaManager;

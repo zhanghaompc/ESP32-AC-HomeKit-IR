@@ -9,7 +9,8 @@ param(
     [string]$Version,
     [string]$Transport = 'https',
     [switch]$SkipPush,
-    [switch]$SkipDevice
+    [switch]$SkipDevice,
+    [switch]$AllowSameVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,6 +86,9 @@ if ($Transport -notin @('ssh', 'https')) {
 if (-not $Version) { $Version = Read-Host "当前版本 v$oldVersion，输入新版本号（回车使用 $oldVersion）" }
 if ([string]::IsNullOrWhiteSpace($Version)) { $Version = $oldVersion }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw "版本号 '$Version' 不是有效格式，例如 1.5.2" }
+if ($Version -eq $oldVersion -and -not $AllowSameVersion) {
+    throw "新版本号和当前 v$oldVersion 相同，设备会判定为已是最新。请指定更高版本号；如果确实要重发同版本，请加 -AllowSameVersion。"
+}
 
 Write-Host "`n=== 发布 v$Version / $Environment ===" -ForegroundColor Cyan
 $status = Invoke-GitSafe @('status', '--short')
@@ -130,7 +134,23 @@ try {
     }
 
     Write-Host "[2/6] 固件和 OTA 清单已生成" -ForegroundColor Green
-    $add = @('add', 'src/DeviceConfig.h', "firmware/$Environment.bin", "firmware/$manifestName", 'release.ps1', 'release.bat')
+    $add = @(
+        'add',
+        'src/DeviceConfig.h',
+        "firmware/$Environment.bin",
+        "firmware/$manifestName",
+        'src/OtaManager.cpp',
+        'src/OtaManager.h',
+        'src/BleManager.cpp',
+        'src/MqttManager.cpp',
+        'src/WifiManagerEx.cpp',
+        'src/main.cpp',
+        'platformio.ini',
+        'huge_app.csv',
+        'huge_app_ota.csv',
+        'release.ps1',
+        'release.bat'
+    )
     if ($Environment -eq 'esp32_wifi') { $add += 'firmware/ota.json' }
     $r = Invoke-GitSafe $add
     if ($r.Code -ne 0) { throw "git add 失败：$($r.Output)" }

@@ -333,6 +333,9 @@ void BleManager::handleCommand(const String &command)
 
     if (command == "ota=check")
     {
+        // 版本检查包含 HTTPS 网络请求，不能在持有 BLE 互斥锁时执行，
+        // 否则会阻塞主循环和 MQTT 心跳，触发看门狗复位。
+        giveMutex();
 #ifdef BLE_ONLY
         // BLE 版保持一次性下载（无确认流程）
         sendChunked(String("ota=start fw=") + otaManager.getVersion());
@@ -363,7 +366,6 @@ void BleManager::handleCommand(const String &command)
         else
             sendChunked(String("ota=fail:") + otaErr);
 #endif
-        giveMutex();
         return;
     }
 
@@ -372,6 +374,7 @@ void BleManager::handleCommand(const String &command)
     if (command == "ota=go")
     {
         String otaErr = "";
+        // beginDownload 现在只负责创建 OTA 任务并立即返回，不再阻塞调用者。
         // OTA 更新期间使用白色闪烁，给用户明确的设备侧提示。
         ledManager.blinkWhite();
         if (otaManager.beginDownload(otaManager.getPendingUrl(), otaErr))

@@ -32,6 +32,8 @@ void WifiManagerEx::begin()
     // 允许 WiFi 驱动在短暂丢包/漫游后自动恢复，减少设备长期离线。
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
+    // 关闭省电睡眠，减少部分路由器下的丢包、断线和恢复失败。
+    WiFi.setSleep(false);
 }
 
 void WifiManagerEx::enable()
@@ -67,6 +69,8 @@ void WifiManagerEx::connectWiFi()
     bool hasSaved = loadWifiCredentials(savedSsid, savedPass);
 
     WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false);
     if (hasSaved)
     {
         Serial.printf("使用已保存的WiFi: %s\n", savedSsid.c_str());
@@ -153,6 +157,7 @@ void WifiManagerEx::checkWiFiConnection()
         {
             Serial.println("尝试重连...");
             WiFi.setAutoReconnect(true);
+            WiFi.setSleep(false);
             WiFi.reconnect();
             if (WiFi.status() != WL_CONNECTED)
             {

@@ -23,6 +23,8 @@ void MqttManager::begin()
 {
     loadConfig();
     client.setBufferSize(1024);
+    client.setKeepAlive(20);
+    client.setSocketTimeout(5);
     client.setServer(host.c_str(), port);
     client.setCallback(MqttManager::onMessage);
     DBG("[MQTT] 初始化完成 host=%s port=%d topic=%s\n", host.c_str(), port, topic.c_str());
@@ -145,7 +147,12 @@ void MqttManager::loop()
     if (host.length() == 0)
         return;
     if (WiFi.status() != WL_CONNECTED)
+    {
+        // WiFi 断开时主动清理旧 MQTT socket，WiFi 恢复后才能重新握手。
+        if (client.connected())
+            client.disconnect();
         return;
+    }
     if (!client.connected())
     {
         unsigned long now = millis();
