@@ -11,7 +11,7 @@
 param(
     [string]$Environment = 'esp32_wifi',
     [string]$Version = '',
-    [string]$DeviceIp = '192.168.10.179',
+    [string]$DeviceIp = '',
     [string]$Transport = 'https',
     [switch]$SkipRelease,
     [switch]$SkipPush,
