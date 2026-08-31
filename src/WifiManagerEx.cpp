@@ -46,7 +46,8 @@ void WifiManagerEx::begin()
 
     // WiFiManager 配网：非阻塞门户 + 自动重连
     wifiManager.setDebugOutput(false);
-    wifiManager.setDarkMode(true);
+    wifiManager.setDarkMode(false);   // 白色主题
+    wifiManager.setMinimumSignalQuality(0); // 不过滤弱信号，避免“搜不到 WiFi”
     wifiManager.setConfigPortalBlocking(false);
     wifiManager.setConfigPortalTimeout(180);
     wifiManager.setWiFiAutoReconnect(true);
