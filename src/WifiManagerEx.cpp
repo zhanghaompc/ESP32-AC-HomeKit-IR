@@ -51,6 +51,10 @@ void WifiManagerEx::begin()
     wifiManager.setConfigPortalBlocking(false);
     wifiManager.setConfigPortalTimeout(180);
     wifiManager.setWiFiAutoReconnect(true);
+    wifiManager.setConfigPortalTimeoutCallback([this]() {
+        Serial.println("WiFiManager 配网页超时，准备重新开启热点或重连");
+        configPortalActive = false;
+    });
     wifiManager.setSaveConfigCallback([this]() {
         String ssid = wifiManager.getWiFiSSID(false);
         String pass = wifiManager.getWiFiPass(false);
@@ -103,9 +107,6 @@ void WifiManagerEx::connectWiFi()
     WiFi.mode(WIFI_AP_STA);
     WiFi.setAutoReconnect(true);
     WiFi.setSleep(false);
-    // 混合模式：无论有没有保存 WiFi，都先把热点打开，手机随时能连上配网页。
-    if (!configPortalActive)
-        startConfigPortal();
 
     if (hasSaved)
     {
@@ -185,25 +186,12 @@ void WifiManagerEx::checkWiFiConnection()
             ledManager.blinkGreen(); // 初始未连接也保持闪烁（同色去重，不会重置计时）
         }
 
+        // WiFiManager 配网页开启期间不要抢着重连 STA，
+        // 否则 STA 扫描会顶掉 AP 广播，导致手机搜不到热点。
         if (!configPortalActive)
         {
             startConfigPortal();
-        }
-
-        if (millis() - lastAttemptTime >= retryInterval)
-        {
-            Serial.println("尝试重连...");
-            WiFi.mode(WIFI_AP_STA);
-            WiFi.setAutoReconnect(true);
-            WiFi.setSleep(false);
-            WiFi.reconnect();
-            if (WiFi.status() != WL_CONNECTED)
-            {
-                String ssid, pass;
-                if (loadWifiCredentials(ssid, pass) && ssid.length() > 0)
-                    WiFi.begin(ssid.c_str(), pass.c_str());
-            }
-            lastAttemptTime = millis();
+            return;
         }
     }
     else
@@ -238,10 +226,14 @@ void WifiManagerEx::startConfigPortal()
     Serial.printf("启动 WiFiManager 配网门户: %s (AP IP: 192.168.4.1)\n", apName.c_str());
 
     wifiManager.startConfigPortal(apName.c_str());
-    // WiFiManager 在 STA 未连接时会先关掉 STA 再开 AP，这里立刻恢复 STA，
-    // 保持“热点常开 + 自动重连旧 WiFi”的混合模式。
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.enableSTA(true);
+    // 有些 Arduino 核心对空字符串密码的 softAP("", "") 会返回 true 但实际不广播。
+    // 这里用无密码重载强制再开一次，确保热点真正可见。
+    WiFi.softAPdisconnect(true);
+    delay(200);
+    WiFi.mode(WIFI_AP);
+    bool forceAp = WiFi.softAP(apName.c_str());
+    Serial.printf("强制重启热点: result=%d mode=%d ip=%s\n",
+                  forceAp ? 1 : 0, (int)WiFi.getMode(), WiFi.softAPIP().toString().c_str());
     configPortalActive = true;
     Serial.printf("WiFiManager 门户已开启，SSID=%s，等待手机连接...\n", apName.c_str());
 }
