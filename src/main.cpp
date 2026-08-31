@@ -1008,7 +1008,9 @@ void loop()
 #ifndef BLE_ONLY
     wifiManager.loop();
     mqttManager.loop();
-    homeSpan.poll();
+    // HomeSpan 只在 WiFi 已连接时才运行，避免它的重连逻辑干扰 AP 热点和自动配网。
+    if (wifiManager.isConnected())
+        homeSpan.poll();
     timerManager.loop();
 
     // OTA 异步下载驱动：分片读取 + MQTT 进度上报
