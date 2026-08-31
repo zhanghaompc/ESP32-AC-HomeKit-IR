@@ -46,7 +46,8 @@ Write-Host "`n=== 一键发布并测试 OTA：v$Version / $Environment ===" -For
 
 if (-not $SkipRelease) {
     Write-Host "[1/4] 编译、生成清单并提交..." -ForegroundColor Green
-    $releaseCmd = "echo Y| release.bat -Environment $Environment -Version $Version -SkipDevice"
+    $releaseBat = Join-Path $PSScriptRoot 'release.bat'
+    $releaseCmd = "echo Y| `"$releaseBat`" -Environment $Environment -Version $Version -SkipDevice"
     if ($SkipPush) { $releaseCmd += " -SkipPush" }
     $oldEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'

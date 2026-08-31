@@ -22,11 +22,17 @@ private:
     DNSServer dnsServer;
     bool wifiConnected = false;
     bool webServerActive = false;
+    bool configPortalActive = false;
+    bool webHandlersReady = false;
+    bool configHandlersReady = false;
     void setupWebHandlers();
+    void setupConfigPortalHandlers();
+    void ensureConfigPortal();
     void checkWiFiConnection();
     void handleWiFiEvent();
     void startWebServer();
     void stopWebServer();
+    void stopConfigPortal();
     void connectWiFi();
     void disconnectWiFi();
     void syncHomeSpanWifi();
@@ -34,5 +40,9 @@ private:
     void saveWifiCredentials(const String &ssid, const String &pass);
     String buildConfigPageHtml(const String &apName);
     unsigned long lastAttemptTime = 0;
+    unsigned long lastPortalAttemptTime = 0;
+    unsigned long lastApRestartTime = 0;
     const unsigned long retryInterval = 5000;
+    const unsigned long portalRetryInterval = 2000;
+    const unsigned long apRestartInterval = 30000;
 };
