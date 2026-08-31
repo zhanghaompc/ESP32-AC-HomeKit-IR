@@ -267,7 +267,30 @@ void WifiManagerEx::ensureConfigPortal()
                    WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
 
     if (configPortalActive && apReady)
+    {
+        // AP 健康检查：WiFi 驱动可能把热点状态保留成“已开”，但实际已经不广播。
+        // 如果 STA 未连上且热点上没有手机，就每 30 秒强制重启一次热点。
+        unsigned long now = millis();
+        if (WiFi.softAPgetStationNum() == 0 &&
+            now - lastApRestartTime >= apRestartInterval)
+        {
+            lastApRestartTime = now;
+            Serial.println("AP 健康检查：强制重启热点...");
+            WiFi.softAPdisconnect(true);
+            delay(150);
+            WiFi.mode(WIFI_AP_STA);
+            WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
+            bool restarted = WiFi.softAP(deviceApName().c_str());
+            if (!restarted)
+            {
+                dnsServer.stop();
+                configServer.stop();
+                configPortalActive = false;
+                startConfigPortal();
+            }
+        }
         return;
+    }
 
     if (configPortalActive && !apReady)
     {
