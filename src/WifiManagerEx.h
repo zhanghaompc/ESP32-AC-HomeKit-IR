@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include <WiFiManager.h>
 
 class WifiManagerEx
 {
@@ -20,6 +21,7 @@ private:
     WebServer server;
     WebServer configServer;
     DNSServer dnsServer;
+    WiFiManager wifiManager;
     bool wifiConnected = false;
     bool webServerActive = false;
     bool configPortalActive = false;

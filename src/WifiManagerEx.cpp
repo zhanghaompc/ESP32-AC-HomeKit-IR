@@ -43,6 +43,24 @@ void WifiManagerEx::begin()
     WiFi.persistent(true);
     // 关闭省电睡眠，减少部分路由器下的丢包、断线和恢复失败。
     WiFi.setSleep(false);
+
+    // WiFiManager 配网：非阻塞门户 + 自动重连
+    wifiManager.setDebugOutput(false);
+    wifiManager.setDarkMode(true);
+    wifiManager.setConfigPortalBlocking(false);
+    wifiManager.setConfigPortalTimeout(180);
+    wifiManager.setWiFiAutoReconnect(true);
+    wifiManager.setSaveConfigCallback([this]() {
+        String ssid = wifiManager.getWiFiSSID(false);
+        String pass = wifiManager.getWiFiPass(false);
+        if (ssid.length() > 0)
+        {
+            saveWifiCredentials(ssid, pass);
+            homeSpan.setWifiCredentials(ssid.c_str(), pass.c_str());
+            lastAttemptTime = 0;
+            Serial.printf("WiFiManager 已保存凭据: %s\n", ssid.c_str());
+        }
+    });
 }
 
 void WifiManagerEx::enable()
@@ -66,10 +84,7 @@ void WifiManagerEx::loop()
     }
     ensureConfigPortal();
     if (configPortalActive)
-    {
-        dnsServer.processNextRequest();
-        configServer.handleClient();
-    }
+        wifiManager.process();
     ArduinoOTA.handle();
     checkWiFiConnection();
 }
@@ -124,6 +139,7 @@ void WifiManagerEx::connectWiFi()
     {
         wifiConnected = true;
         syncHomeSpanWifi();
+        stopConfigPortal();
         ledManager.stopBlink();
         ledManager.off(); // WiFi 已连接 = 熄灭
         Serial.printf("\nWiFi连接成功！IP: %s:8080\n", WiFi.localIP().toString().c_str());
@@ -196,6 +212,7 @@ void WifiManagerEx::checkWiFiConnection()
             wasConnected = true;
             wifiConnected = true;
             syncHomeSpanWifi();
+            stopConfigPortal();
             ledManager.stopBlink();
             ledManager.off(); // WiFi 已连接 = 熄灭
             Serial.printf("WiFi已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
@@ -217,101 +234,37 @@ void WifiManagerEx::startConfigPortal()
     String apName = deviceApName();   // 例如 ESP32AC_A1B2
     ledManager.setColor(CRGB::Green);
 
-    Serial.printf("启动中文配置门户: %s (AP IP: 192.168.4.1)\n", apName.c_str());
+    Serial.printf("启动 WiFiManager 配网门户: %s (AP IP: 192.168.4.1)\n", apName.c_str());
 
-    bool apAlreadyUp = WiFi.getMode() == WIFI_AP_STA &&
-                       WiFi.softAPSSID().length() > 0 &&
-                       WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
-    bool apStarted = apAlreadyUp;
-    if (!apAlreadyUp)
-    {
-        WiFi.mode(WIFI_AP_STA);
-        // 显式固定 AP 网段，避免 softAPIP() 在热点初始化完成前读到 0.0.0.0。
-        WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-
-        // Use the no-password overload. Passing an empty password string can be
-        // rejected by the ESP32 core as an invalid WPA password.
-        for (int attempt = 0; attempt < 3 && !apStarted; attempt++)
-        {
-            apStarted = WiFi.softAP(apName.c_str());
-            if (!apStarted)
-            {
-                Serial.printf("配网热点第 %d 次启动失败，稍后重试...\n", attempt + 1);
-                delay(150);
-            }
-        }
-    }
-    IPAddress apIP = WiFi.softAPIP();
-    if (!apStarted || apIP == IPAddress(0, 0, 0, 0))
-    {
-        Serial.printf("配网热点启动失败: result=%s, mode=%d, AP IP=%s\n",
-                      apStarted ? "true" : "false", (int)WiFi.getMode(), apIP.toString().c_str());
-        return;
-    }
-
-    setupConfigPortalHandlers();
+    wifiManager.startConfigPortal(apName.c_str());
+    // WiFiManager 在 STA 未连接时会先关掉 STA 再开 AP，这里立刻恢复 STA，
+    // 保持“热点常开 + 自动重连旧 WiFi”的混合模式。
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.enableSTA(true);
     configPortalActive = true;
-
-    dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
-    dnsServer.start(53, "*", apIP);
-    configServer.begin();
-    Serial.printf("配网门户已开启，SSID=%s，AP IP=%s，等待手机连接...\n",
-                  apName.c_str(), apIP.toString().c_str());
+    Serial.printf("WiFiManager 门户已开启，SSID=%s，等待手机连接...\n", apName.c_str());
 }
 
 void WifiManagerEx::ensureConfigPortal()
 {
-    String apSsid = WiFi.softAPSSID();
-    bool apReady = WiFi.getMode() == WIFI_AP_STA &&
-                   apSsid.length() > 0 &&
-                   WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
-
-    if (configPortalActive && apReady)
+    if (WiFi.status() == WL_CONNECTED)
     {
-        // AP 健康检查：WiFi 驱动可能把热点状态保留成“已开”，但实际已经不广播。
-        // 如果 STA 未连上且热点上没有手机，就每 30 秒强制重启一次热点。
-        unsigned long now = millis();
-        if (WiFi.softAPgetStationNum() == 0 &&
-            now - lastApRestartTime >= apRestartInterval)
-        {
-            lastApRestartTime = now;
-            Serial.println("AP 健康检查：强制重启热点...");
-            WiFi.softAPdisconnect(true);
-            delay(150);
-            WiFi.mode(WIFI_AP_STA);
-            WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
-            bool restarted = WiFi.softAP(deviceApName().c_str());
-            if (!restarted)
-            {
-                dnsServer.stop();
-                configServer.stop();
-                configPortalActive = false;
-                startConfigPortal();
-            }
-        }
+        if (configPortalActive)
+            stopConfigPortal();
         return;
     }
 
-    if (configPortalActive && !apReady)
-    {
-        Serial.println("检测到配网热点被关闭，正在恢复混合模式热点...");
-        dnsServer.stop();
-        configServer.stop();
-        configPortalActive = false;
-    }
-
-    startConfigPortal();
+    if (!configPortalActive)
+        startConfigPortal();
 }
 
 void WifiManagerEx::stopConfigPortal()
 {
     if (!configPortalActive)
         return;
-    dnsServer.stop();
-    configServer.stop();
-    WiFi.softAPdisconnect(true);
+    wifiManager.stopConfigPortal();
     configPortalActive = false;
-    Serial.println("配网门户已关闭");
+    Serial.println("WiFiManager 配网门户已关闭");
 }
 
 void WifiManagerEx::setupConfigPortalHandlers()
