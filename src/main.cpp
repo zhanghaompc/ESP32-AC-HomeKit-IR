@@ -327,7 +327,7 @@ String handleIrReceiving()
   if (irrecv.decode(&results))
   {
     // 位数太少的 UNKNOWN 通常是噪声/半截帧，不显示也不参与学习。
-    if (results.decode_type == decode_type_t::UNKNOWN && results.bits < 10)
+    if (results.decode_type == decode_type_t::UNKNOWN && results.bits < 20)
     {
       irrecv.resume();
       return "";
