@@ -702,6 +702,28 @@ struct DEV_MODE_SWITCH : Service::Switch
   }
 };
 
+// HomeSpan 延迟初始化：只在 WiFi 真正连上之后调用，且全程只调一次。
+// homeSpan.begin() 内部会拉起 HomeSpan 的 WiFi 状态机，所以必须等
+// WifiManagerEx 完成连接、不再需要抢射频时才执行。
+bool homeSpanStarted = false;
+
+void initHomeSpan()
+{
+  if (homeSpanStarted)
+    return;
+  homeSpanStarted = true;
+
+  Serial.println("[HomeKit] WiFi 已就绪，初始化 HomeSpan...");
+  homeSpan.setPairingCode("11122333");
+  homeSpan.begin(Category::AirConditioners, "空调");
+  new SpanAccessory();
+  new Service::AccessoryInformation();
+  new Characteristic::Identify();
+  new DEV_AC(15);
+  new DEV_MODE_SWITCH();
+  Serial.println("[HomeKit] HomeSpan 初始化完成");
+}
+
 #endif
 
 #ifndef BLE_ONLY
@@ -935,16 +957,10 @@ void setup()
   ac.next.clock = -1;
   ac.next.power = true;
 
-  // HomeSpan 设置（仅保留 HomeKit/WiFi 功能的版本）
-#ifndef BLE_ONLY
-  homeSpan.setPairingCode("11122333");
-  homeSpan.begin(Category::AirConditioners, "空调");
-  new SpanAccessory();
-  new Service::AccessoryInformation();
-  new Characteristic::Identify();
-  new DEV_AC(15);
-  new DEV_MODE_SWITCH();
-#endif
+  // HomeSpan 不在这里初始化。homeSpan.begin() 会启动 HomeSpan 自己的
+  // WiFi 连接/重连状态机，和 WifiManagerEx 抢同一个射频，导致热点起不来、
+  // 或多广播一个 HomeSpan-Setup 的 SSID。改为 STA 首次连上后再调用
+  // initHomeSpan()（见下方），此时 WiFi 已就绪，HomeSpan 只做 HomeKit 协议。
 
   // 默认启动模式：完整版=BLE；WiFi专用版=WiFi
 #ifndef WIFI_ONLY
@@ -1021,9 +1037,12 @@ void loop()
 #ifndef BLE_ONLY
     wifiManager.loop();
     mqttManager.loop();
-    // HomeSpan 只在 WiFi 已连接时才运行，避免它的重连逻辑干扰 AP 热点和自动配网。
+    // HomeSpan 在 WiFi 首次连上后才初始化，之后持续 poll。
+    // 断网期间不需要停 poll —— HomeSpan 此时不管 WiFi，不会和配网热点冲突。
     if (wifiManager.isConnected())
-        homeSpan.poll();
+      initHomeSpan();
+    if (homeSpanStarted)
+      homeSpan.poll();
     timerManager.loop();
 
     // OTA 异步下载驱动：分片读取 + MQTT 进度上报

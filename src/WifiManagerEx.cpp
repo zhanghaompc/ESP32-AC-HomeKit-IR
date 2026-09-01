@@ -43,39 +43,19 @@ void WifiManagerEx::begin()
     WiFi.persistent(true);
     // 关闭省电睡眠，减少部分路由器下的丢包、断线和恢复失败。
     WiFi.setSleep(false);
-
-    // WiFiManager 配网：非阻塞门户 + 自动重连
-    wifiManager.setDebugOutput(false);
-    wifiManager.setDarkMode(false);   // 白色主题
-    wifiManager.setMinimumSignalQuality(0); // 不过滤弱信号，避免“搜不到 WiFi”
-    wifiManager.setConfigPortalBlocking(false);
-    wifiManager.setConfigPortalTimeout(180);
-    wifiManager.setWiFiAutoReconnect(true);
-    wifiManager.setConfigPortalTimeoutCallback([this]() {
-        Serial.println("WiFiManager 配网页超时，准备重新开启热点或重连");
-        configPortalActive = false;
-    });
-    wifiManager.setSaveConfigCallback([this]() {
-        String ssid = wifiManager.getWiFiSSID(false);
-        String pass = wifiManager.getWiFiPass(false);
-        if (ssid.length() > 0)
-        {
-            saveWifiCredentials(ssid, pass);
-            homeSpan.setWifiCredentials(ssid.c_str(), pass.c_str());
-            lastAttemptTime = 0;
-            Serial.printf("WiFiManager 已保存凭据: %s\n", ssid.c_str());
-        }
-    });
+    setupConfigPortalHandlers();
 }
 
 void WifiManagerEx::enable()
 {
+    radioEnabled = true;
     connectWiFi();
     startWebServer();
 }
 
 void WifiManagerEx::disable()
 {
+    radioEnabled = false;
     stopConfigPortal();
     stopWebServer();
     disconnectWiFi();
@@ -83,14 +63,21 @@ void WifiManagerEx::disable()
 
 void WifiManagerEx::loop()
 {
+    if (!radioEnabled)
+        return;
+
     if (webServerActive)
-    {
         server.handleClient();
-    }
-    ensureConfigPortal();
+
     if (configPortalActive)
-        wifiManager.process();
-    ArduinoOTA.handle();
+    {
+        dnsServer.processNextRequest();
+        configServer.handleClient();
+    }
+
+    if (otaReady)
+        ArduinoOTA.handle();
+
     checkWiFiConnection();
 }
 
@@ -99,54 +86,76 @@ bool WifiManagerEx::isConnected() const
     return wifiConnected;
 }
 
-void WifiManagerEx::connectWiFi()
+// STA 重连退避：5s -> 10s -> 20s -> 30s 封顶
+unsigned long WifiManagerEx::currentBackoff() const
 {
-    String savedSsid, savedPass;
-    bool hasSaved = loadWifiCredentials(savedSsid, savedPass);
+    switch (retryCount)
+    {
+    case 0:
+        return 0;
+    case 1:
+        return 5000;
+    case 2:
+        return 10000;
+    case 3:
+        return 20000;
+    default:
+        return 30000;
+    }
+}
 
-    WiFi.mode(WIFI_AP_STA);
+void WifiManagerEx::beginStaConnect()
+{
+    String ssid, pass;
+    hasCredentials = loadWifiCredentials(ssid, pass);
+
+    // 模式固定 AP_STA：AP 是否广播由 softAP/softAPdisconnect 控制，
+    // 不再用 WiFi.mode() 去切换，避免把 STA 一起关掉。
+    if (WiFi.getMode() != WIFI_AP_STA)
+        WiFi.mode(WIFI_AP_STA);
     WiFi.setAutoReconnect(true);
     WiFi.setSleep(false);
 
-    if (hasSaved)
+    lastStaAttemptTime = millis();
+    if (retryCount < 255)
+        retryCount++;
+
+    if (hasCredentials)
     {
-        Serial.printf("使用已保存的WiFi: %s\n", savedSsid.c_str());
-        WiFi.begin(savedSsid.c_str(), savedPass.c_str());
+        Serial.printf("[WiFi] 尝试连接 %s (第 %u 次)\n", ssid.c_str(), retryCount);
+        WiFi.begin(ssid.c_str(), pass.c_str());
+    }
+    else if (pendingSsid.length() > 0)
+    {
+        Serial.printf("[WiFi] 尝试连接配网页提交的 %s\n", pendingSsid.c_str());
+        WiFi.begin(pendingSsid.c_str(), pendingPass.c_str());
     }
     else
     {
-        // 兼容旧固件：WiFiManager 曾把凭据写入 NVS，WiFi.begin() 能自动读取
+        // 兼容旧固件：凭据可能只在 NVS 里，WiFi.begin() 无参能自动读取
+        Serial.println("[WiFi] 无 SPIFFS 凭据，尝试 NVS 中的旧凭据");
         WiFi.begin();
     }
-    Serial.println("正在连接WiFi...");
+}
+
+void WifiManagerEx::connectWiFi()
+{
+    String ssid, pass;
+    hasCredentials = loadWifiCredentials(ssid, pass);
+
+    retryCount = 0;
+    staDownSince = millis();
     ledManager.blinkGreen();
 
-    unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 5000)
+    if (!hasCredentials)
     {
-        delay(200);
-        ledManager.update(); // 连接等待时保持绿灯闪烁动画
-        Serial.print(".");
+        // 完全没配过：直接开热点等配网，不用白等重连超时
+        Serial.println("[WiFi] 未配置 WiFi，直接开启配网热点");
+        startConfigPortal();
+        return;
     }
 
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        if (!configPortalActive)
-        {
-            Serial.println(hasSaved ? "\nWiFi连接失败，开启混合配网门户并继续自动重试" : "\n未配置WiFi，启动混合配网门户");
-            startConfigPortal();
-        }
-    }
-    else
-    {
-        wifiConnected = true;
-        syncHomeSpanWifi();
-        stopConfigPortal();
-        ledManager.stopBlink();
-        ledManager.off(); // WiFi 已连接 = 熄灭
-        Serial.printf("\nWiFi连接成功！IP: %s:8080\n", WiFi.localIP().toString().c_str());
-        timerManager.syncTime();
-    }
+    beginStaConnect();
 }
 
 void WifiManagerEx::syncHomeSpanWifi()
@@ -162,52 +171,85 @@ void WifiManagerEx::syncHomeSpanWifi()
 
 void WifiManagerEx::disconnectWiFi()
 {
+    stopConfigPortal();
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     wifiConnected = false;
+    retryCount = 0;
     Serial.println("WiFi已关闭");
 }
 
 void WifiManagerEx::checkWiFiConnection()
 {
-    static bool wasConnected = false;
+    unsigned long now = millis();
+    bool linkUp = (WiFi.status() == WL_CONNECTED);
 
-    if (WiFi.status() != WL_CONNECTED)
+    if (linkUp)
     {
-        if (wasConnected)
+        if (!wifiConnected)
         {
-            wasConnected = false;
-            wifiConnected = false;
-            Serial.println("WiFi已断开，开始闪绿灯...");
-            ledManager.blinkGreen();
-        }
-        else
-        {
-            ledManager.blinkGreen(); // 初始未连接也保持闪烁（同色去重，不会重置计时）
-        }
-
-        // WiFiManager 配网页开启期间不要抢着重连 STA，
-        // 否则 STA 扫描会顶掉 AP 广播，导致手机搜不到热点。
-        if (!configPortalActive)
-        {
-            startConfigPortal();
-            return;
-        }
-    }
-    else
-    {
-        if (!wasConnected)
-        {
-            wasConnected = true;
             wifiConnected = true;
+            retryCount = 0;
+            staDownSince = 0;
             syncHomeSpanWifi();
-            stopConfigPortal();
             ledManager.stopBlink();
             ledManager.off(); // WiFi 已连接 = 熄灭
-            Serial.printf("WiFi已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
+            Serial.printf("[WiFi] 已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
             timerManager.syncTime();
+
+            // 连上就关掉配网热点：AP_STA 长期共存会拖累 STA，
+            // 也不该在已联网时还多广播一个 SSID。
+            if (configPortalActive)
+            {
+                // 留一点时间把 /save 的响应发回手机，再关热点
+                if (apLingerMs)
+                    delay(apLingerMs);
+                stopConfigPortal();
+            }
         }
+        return;
     }
+
+    // ---- 未连接 ----
+    if (wifiConnected)
+    {
+        wifiConnected = false;
+        retryCount = 0;
+        staDownSince = now;
+        Serial.println("[WiFi] 连接已断开，开始退避重连");
+    }
+    if (staDownSince == 0)
+        staDownSince = now;
+
+    ledManager.blinkGreen(); // 同色去重，不会重置闪烁计时
+
+    // 断连超过宽限期才开热点。这段时间先安静重连，
+    // 避免每次短暂丢包都弹一个热点出来。
+    if (!configPortalActive && (now - staDownSince >= staGraceMs || !hasCredentials))
+    {
+        Serial.printf("[WiFi] 断连已超过 %lu 秒，开启配网热点\n", staGraceMs / 1000);
+        startConfigPortal();
+    }
+
+    // 无论热点是否开着，STA 都按退避节奏继续重试
+    if (now - lastStaAttemptTime >= currentBackoff())
+        beginStaConnect();
+}
+
+void WifiManagerEx::startAccessPoint()
+{
+    String apName = deviceApName(); // 例如 ESP32AC_a1b2
+
+    // 只在 AP_STA 下开热点，绝不切成纯 WIFI_AP —— 那样会关掉 STA，
+    // 设备就再也没机会自己连回去了。
+    if (WiFi.getMode() != WIFI_AP_STA)
+        WiFi.mode(WIFI_AP_STA);
+
+    // 开放热点（无密码）。channel 跟随 STA 会更稳，但未连接时用 1。
+    bool ok = WiFi.softAP(apName.c_str());
+    Serial.printf("[AP] softAP(%s) result=%d mode=%d ip=%s\n",
+                  apName.c_str(), ok ? 1 : 0, (int)WiFi.getMode(),
+                  WiFi.softAPIP().toString().c_str());
 }
 
 void WifiManagerEx::startConfigPortal()
@@ -215,49 +257,36 @@ void WifiManagerEx::startConfigPortal()
     if (configPortalActive)
         return;
 
-    unsigned long now = millis();
-    if (now - lastPortalAttemptTime < portalRetryInterval)
-        return;
-    lastPortalAttemptTime = now;
+    // 手动触发（按键/指令）时把宽限计时归零，避免刚开就被别处逻辑判定该关
+    if (staDownSince == 0)
+        staDownSince = millis();
 
-    String apName = deviceApName();   // 例如 ESP32AC_A1B2
-    ledManager.setColor(CRGB::Green);
+    setupConfigPortalHandlers();
+    startAccessPoint();
 
-    Serial.printf("启动 WiFiManager 配网门户: %s (AP IP: 192.168.4.1)\n", apName.c_str());
+    // captive portal：把所有域名解析到 AP IP，手机自动弹出配网页
+    dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    configServer.begin(80);
 
-    wifiManager.startConfigPortal(apName.c_str());
-    // 有些 Arduino 核心对空字符串密码的 softAP("", "") 会返回 true 但实际不广播。
-    // 这里用无密码重载强制再开一次，确保热点真正可见。
-    WiFi.softAPdisconnect(true);
-    delay(200);
-    WiFi.mode(WIFI_AP);
-    bool forceAp = WiFi.softAP(apName.c_str());
-    Serial.printf("强制重启热点: result=%d mode=%d ip=%s\n",
-                  forceAp ? 1 : 0, (int)WiFi.getMode(), WiFi.softAPIP().toString().c_str());
     configPortalActive = true;
-    Serial.printf("WiFiManager 门户已开启，SSID=%s，等待手机连接...\n", apName.c_str());
-}
-
-void WifiManagerEx::ensureConfigPortal()
-{
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        if (configPortalActive)
-            stopConfigPortal();
-        return;
-    }
-
-    if (!configPortalActive)
-        startConfigPortal();
+    ledManager.blinkGreen();
+    Serial.printf("[AP] 配网门户已开启，SSID=%s IP=%s\n",
+                  deviceApName().c_str(), WiFi.softAPIP().toString().c_str());
 }
 
 void WifiManagerEx::stopConfigPortal()
 {
     if (!configPortalActive)
         return;
-    wifiManager.stopConfigPortal();
+
+    configServer.stop();
+    dnsServer.stop();
+    WiFi.softAPdisconnect(true);
+    // 保持 AP_STA 模式但不广播：下次要配网时 softAP() 直接拉起即可
     configPortalActive = false;
-    Serial.println("WiFiManager 配网门户已关闭");
+    scanState = -2;
+    Serial.println("[AP] 配网门户已关闭，热点停止广播");
 }
 
 void WifiManagerEx::setupConfigPortalHandlers()
@@ -278,61 +307,7 @@ void WifiManagerEx::setupConfigPortalHandlers()
         configServer.send(200, "application/json; charset=utf-8", json);
     });
 
-    configServer.on("/scan", HTTP_GET, [this]() {
-        // Keep the provisioning AP alive while scanning. The ESP32 can only
-        // discover 2.4 GHz networks, so the page also supports manual SSID entry.
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.scanDelete();
-        int n = WiFi.scanNetworks(false, true, false, 500);
-        if (n == WIFI_SCAN_RUNNING)
-        {
-            unsigned long deadline = millis() + 12000;
-            while (n == WIFI_SCAN_RUNNING && millis() < deadline)
-            {
-                delay(50);
-                n = WiFi.scanComplete();
-            }
-        }
-
-        if (n < 0)
-        {
-            // A second attempt handles a scan left in progress by the WiFi
-            // driver after a previous browser request was interrupted.
-            WiFi.scanDelete();
-            delay(100);
-            n = WiFi.scanNetworks(false, true, false, 500);
-        }
-
-        Serial.printf("配网页面扫描结果: %d (mode=%d, AP=%s)\n",
-                      n, (int)WiFi.getMode(), WiFi.softAPIP().toString().c_str());
-
-        if (n < 0)
-        {
-            String message = n == WIFI_SCAN_RUNNING ? "扫描仍在进行，请稍后重试" : "ESP32 扫描失败，请重试";
-            configServer.send(200, "application/json; charset=utf-8",
-                              "{\"ok\":false,\"count\":0,\"code\":" + String(n) +
-                                  ",\"message\":\"" + message + "\",\"items\":[]}");
-            return;
-        }
-
-        String json = "{\"ok\":true,\"count\":" + String(n) + ",\"code\":0,\"items\":[";
-        int visibleCount = 0;
-        for (int i = 0; i < n; i++)
-        {
-            String ssid = WiFi.SSID(i);
-            if (ssid.length() == 0)
-                continue;
-            if (visibleCount++)
-                json += ",";
-            ssid.replace("\\", "\\\\");
-            ssid.replace("\"", "\\\"");
-            json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(WiFi.RSSI(i)) +
-                    ",\"open\":" + String(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "true" : "false") + "}";
-        }
-        json += "],\"message\":\"" + String(visibleCount ? "扫描完成" : "没有发现可见的 2.4GHz WiFi") + "\"}";
-        WiFi.scanDelete();
-        configServer.send(200, "application/json; charset=utf-8", json);
-    });
+    configServer.on("/scan", HTTP_GET, [this]() { handleScanRequest(); });
 
     configServer.on("/save", HTTP_POST, [this]() {
         String ssid = configServer.arg("ssid");
@@ -345,16 +320,22 @@ void WifiManagerEx::setupConfigPortalHandlers()
         }
 
         saveWifiCredentials(ssid, pass);
-        // Keep HomeSpan's NVS credentials in sync with the portal credentials.
+        // 同步给 HomeSpan，让它 begin() 之后能直接用同一份凭据
         homeSpan.setWifiCredentials(ssid.c_str(), pass.c_str());
-        lastAttemptTime = 0;
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.setAutoReconnect(true);
-        WiFi.setSleep(false);
-        WiFi.begin(ssid.c_str(), pass.c_str());
 
+        pendingSsid = ssid;
+        pendingPass = pass;
+        hasCredentials = true;
+        retryCount = 0;
+        staDownSince = millis();
+
+        // 先把响应发回手机，再发起连接，避免连接抖动把 HTTP 响应吞掉
         String message = "{\"ok\":true,\"message\":\"已保存，正在连接 " + jsonEscape(ssid) + "\"}";
         configServer.send(200, "application/json; charset=utf-8", message);
+
+        WiFi.setAutoReconnect(true);
+        WiFi.setSleep(false);
+        beginStaConnect();
     });
 
     configServer.onNotFound([this]() {
@@ -363,6 +344,75 @@ void WifiManagerEx::setupConfigPortalHandlers()
     });
 
     configHandlersReady = true;
+}
+
+// 异步扫描：不阻塞主循环，AP 广播和 DNS 继续响应，手机不会掉线。
+// 前端拿到 scanning=true 就轮询重试。
+void WifiManagerEx::handleScanRequest()
+{
+    int done = WiFi.scanComplete();
+
+    // 尚未发起，或上次结果已被取走：启动一次新扫描
+    if (scanState == -2 && done != WIFI_SCAN_RUNNING)
+    {
+        WiFi.scanDelete();
+        // async=true，隐藏 SSID 也一并返回
+        WiFi.scanNetworks(true, true);
+        scanState = -1;
+        scanStartTime = millis();
+        configServer.send(200, "application/json; charset=utf-8",
+                          "{\"ok\":true,\"scanning\":true,\"count\":0,\"items\":[],"
+                          "\"message\":\"正在扫描附近 2.4GHz WiFi…\"}");
+        return;
+    }
+
+    if (done == WIFI_SCAN_RUNNING)
+    {
+        if (millis() - scanStartTime > scanTimeoutMs)
+        {
+            WiFi.scanDelete();
+            scanState = -2;
+            configServer.send(200, "application/json; charset=utf-8",
+                              "{\"ok\":false,\"scanning\":false,\"count\":0,\"items\":[],"
+                              "\"message\":\"扫描超时，请重试或手动输入名称\"}");
+            return;
+        }
+        configServer.send(200, "application/json; charset=utf-8",
+                          "{\"ok\":true,\"scanning\":true,\"count\":0,\"items\":[],"
+                          "\"message\":\"扫描中…\"}");
+        return;
+    }
+
+    if (done < 0)
+    {
+        WiFi.scanDelete();
+        scanState = -2;
+        configServer.send(200, "application/json; charset=utf-8",
+                          "{\"ok\":false,\"scanning\":false,\"count\":0,\"items\":[],"
+                          "\"message\":\"扫描失败，请重试或手动输入名称\"}");
+        return;
+    }
+
+    Serial.printf("[AP] 扫描完成: %d 个 (mode=%d)\n", done, (int)WiFi.getMode());
+
+    String json = "{\"ok\":true,\"scanning\":false,\"count\":" + String(done) + ",\"items\":[";
+    int visible = 0;
+    for (int i = 0; i < done; i++)
+    {
+        String ssid = WiFi.SSID(i);
+        if (ssid.length() == 0)
+            continue;
+        if (visible++)
+            json += ",";
+        json += "{\"ssid\":\"" + jsonEscape(ssid) + "\",\"rssi\":" + String(WiFi.RSSI(i)) +
+                ",\"open\":" + String(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "true" : "false") + "}";
+    }
+    json += "],\"message\":\"" +
+            String(visible ? "扫描完成" : "没有发现可见的 2.4GHz WiFi") + "\"}";
+
+    WiFi.scanDelete();
+    scanState = -2; // 允许下次重新扫描
+    configServer.send(200, "application/json; charset=utf-8", json);
 }
 
 bool WifiManagerEx::loadWifiCredentials(String &ssid, String &pass)
@@ -432,7 +482,13 @@ String WifiManagerEx::buildConfigPageHtml(const String &apName)
         "function setMsg(text,kind){msg.className='msg '+(kind||'');msg.textContent=text||'';}"
         "function refreshStatus(){fetch('/status').then(function(r){return r.json()}).then(function(s){apip.textContent=s.apip||'192.168.4.1';if(s.connected){portalBadge.textContent='STA 已连接';portalBadge.className='badge ok';connState.textContent='WiFi 已连接';connDesc.textContent=s.ssid?s.ssid+' · '+s.ip:s.ip;}else{portalBadge.textContent='门户开启中';portalBadge.className='badge';connState.textContent='正在尝试重连';connDesc.textContent='热点开放中，等待新的 WiFi 配置';}}).catch(function(){});}"
         "function renderScan(data){var list=data.items||[];scanList.innerHTML='';var options=document.getElementById('wifiOptions');options.innerHTML='';if(!list.length){scanBadge.textContent='无结果';return;}scanBadge.textContent=list.length+' 个结果';list.forEach(function(w){var option=document.createElement('option');option.value=w.ssid;options.appendChild(option);var row=document.createElement('button');row.type='button';row.className='item';row.onclick=function(){document.getElementById('ssid').value=w.ssid;setMsg('已选择 '+w.ssid,'info');};var left=document.createElement('div');left.innerHTML='<div>'+w.ssid+'</div><small>'+(w.open?'开放网络':'加密网络')+'</small>';var right=document.createElement('small');right.textContent=w.rssi+' dBm';row.appendChild(left);row.appendChild(right);scanList.appendChild(row);});}"
-        "function doScan(){scanBtn.disabled=true;scanBadge.textContent='扫描中';setMsg('正在扫描附近 2.4GHz WiFi…','info');fetch('/scan').then(function(r){return r.json()}).then(function(data){renderScan(data);var list=data.items||[];setMsg(list.length?'扫描完成':(data.message||'没有扫到可用 WiFi，可手动输入名称'),'info');}).catch(function(){setMsg('扫描失败，请重试；也可以手动输入 WiFi 名称','err');scanBadge.textContent='失败';}).finally(function(){scanBtn.disabled=false;});}"
+        "var scanTries=0;"
+        "function pollScan(){fetch('/scan').then(function(r){return r.json()}).then(function(data){"
+        "if(data.scanning&&scanTries++<20){scanBadge.textContent='扫描中';setTimeout(pollScan,1000);return;}"
+        "scanTries=0;scanBtn.disabled=false;renderScan(data);var list=data.items||[];"
+        "setMsg(list.length?'扫描完成':(data.message||'没有扫到可用 WiFi，可手动输入名称'),'info');"
+        "}).catch(function(){scanTries=0;scanBtn.disabled=false;setMsg('扫描失败，请重试；也可以手动输入 WiFi 名称','err');scanBadge.textContent='失败';});}"
+        "function doScan(){scanBtn.disabled=true;scanTries=0;scanBadge.textContent='扫描中';setMsg('正在扫描附近 2.4GHz WiFi…','info');pollScan();}"
         "document.getElementById('wifiForm').addEventListener('submit',function(e){e.preventDefault();var ssid=document.getElementById('ssid').value.trim();var pass=document.getElementById('pass').value; if(!ssid){setMsg('请先选择一个 WiFi','err');return;}setMsg('正在保存并连接 '+ssid+'…','info');var form=new FormData();form.append('ssid',ssid);form.append('pass',pass);fetch('/save',{method:'POST',body:form}).then(function(r){return r.json()}).then(function(j){setMsg(j.message||'已保存，正在连接','ok');refreshStatus();}).catch(function(){setMsg('保存失败，请重试','err');});});"
         "refreshStatus();setInterval(refreshStatus,3000);"
         "</script></div></body></html>");
@@ -452,6 +508,7 @@ void WifiManagerEx::startWebServer()
     ArduinoOTA.onEnd([]() { Serial.println("\nOTA 结束，重启中..."); });
     ArduinoOTA.onError([](ota_error_t err) { Serial.printf("OTA 错误: %u\n", err); });
     ArduinoOTA.begin();
+    otaReady = true;
 
     Serial.println("WebServer已启动");
 }
@@ -460,6 +517,7 @@ void WifiManagerEx::stopWebServer()
 {
     server.stop();
     webServerActive = false;
+    otaReady = false; // 停服后不要再 handle OTA
     Serial.println("WebServer已关闭");
 }
 
@@ -622,8 +680,4 @@ void WifiManagerEx::setupWebHandlers()
         } });
 
     webHandlersReady = true;
-}
-
-void WifiManagerEx::handleWiFiEvent()
-{
 }
