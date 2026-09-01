@@ -140,7 +140,7 @@
     <div class="row"><label>路径</label><input id="path" placeholder="/mqtt"></div>
     <div class="row"><label>用户名</label><input id="username" placeholder="留空 = 匿名"></div>
     <div class="row"><label>密码</label><input id="password" type="password" placeholder="留空 = 匿名"></div>
-    <div class="row"><label>主题</label><input id="topic" placeholder="ac/esp32ac"></div>
+    <div class="row"><label>主题</label><input id="topic" placeholder="ac/esp32/xxxx"></div>
     <div class="row">
       <button id="btnConnect" class="primary" style="flex:1">连接</button>
       <button id="btnDisconnect" class="danger" style="flex:1">断开</button>
@@ -210,7 +210,7 @@ const PROTOCOL_CN = {AC:"通用空调",AMCOR:"安可达",AIRWELL:"艾尔威尔",
 let client = null;
 let temp = 26, modeIndex = 1, speedIndex = 2, powerOn = false;
 let protocolName = "";
-let cfg = { host: "broker-cn.emqx.io", port: 8084, path: "/mqtt", tls: true, username: "", password: "", topic: "ac/esp32ac" };
+let cfg = { host: "broker-cn.emqx.io", port: 8084, path: "/mqtt", tls: true, username: "", password: "", topic: "ac/esp32/xxxx" };
 
 const $ = id => document.getElementById(id);
 
@@ -231,7 +231,7 @@ function saveCfg() {
   cfg.path = $("path").value.trim() || "/mqtt";
   cfg.username = $("username").value.trim();
   cfg.password = $("password").value;
-  cfg.topic = $("topic").value.trim() || "ac/esp32ac";
+  cfg.topic = $("topic").value.trim() || "ac/esp32/xxxx";
   localStorage.setItem("mqtt_cfg_web", JSON.stringify(cfg));
   $("pubTopic").value = cfg.topic + "/in";
 }

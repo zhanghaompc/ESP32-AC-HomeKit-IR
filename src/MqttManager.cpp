@@ -39,7 +39,7 @@ void MqttManager::loadConfig()
         port = 1883;
         user = "";
         pass = "";
-        topic = deviceMqttBase();   // 例如 ac/esp32aca1b2
+        topic = deviceMqttBase();   // 例如 ac/esp32/a1b2
         saveConfig();
         return;
     }
@@ -62,7 +62,9 @@ void MqttManager::loadConfig()
     port = doc["port"] | 1883;
     user = doc["user"] | "";
     pass = doc["pass"] | "";
-    topic = doc["topic"] | "";
+    topic = normalizeMqttTopic(doc["topic"] | "");
+    if (topic.length() == 0)
+        topic = deviceMqttBase();
 }
 
 void MqttManager::saveConfig()
