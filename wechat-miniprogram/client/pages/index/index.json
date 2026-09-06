@@ -1,0 +1,9 @@
+{
+  "usingComponents": {},
+  "navigationBarTitleText": "智能空调控制器",
+  "navigationBarBackgroundColor": "#FFFFFF",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F8F8F8",
+  "backgroundTextStyle": "light",
+  "enablePullDownRefresh": false
+}

@@ -1,0 +1,56 @@
+{
+    "name" : "时欢智能空调助手",
+    "appid" : "__UNI__8209D1E",
+    "description" : "ESP32 空调 BLE 控制 App（Android / iOS）",
+    "versionName" : "1.0.0",
+    "versionCode" : "100",
+    "transformPx" : false,
+    "vueVersion" : "3",
+    "app-plus" : {
+        "usingComponents" : true,
+        "nvueStyleCompiler" : "uni-app",
+        "compilerVersion" : 3,
+        "splashscreen" : {
+            "alwaysShowBeforeRender" : true,
+            "waiting" : true,
+            "autoclose" : true,
+            "delay" : 0
+        },
+        "modules" : {},
+        "distribute" : {
+            "android" : {
+                "permissions" : [
+                    "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+                    "<uses-permission android:name=\"android.permission.BLUETOOTH\"/>",
+                    "<uses-permission android:name=\"android.permission.BLUETOOTH_ADMIN\"/>",
+                    "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+                    "<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
+                    "<uses-permission android:name=\"android.permission.BLUETOOTH_SCAN\"/>",
+                    "<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\"/>",
+                    "<uses-feature android:name=\"android.hardware.bluetooth_le\" android:required=\"true\"/>"
+                ]
+            },
+            "ios" : {
+                "privacyDescription" : {
+                    "NSBluetoothAlwaysUsageDescription" : "用于搜索并连接附近的智能空调设备",
+                    "NSBluetoothPeripheralUsageDescription" : "用于与智能空调设备进行蓝牙通信",
+                    "NSLocationWhenInUseUsageDescription" : "安卓设备搜索蓝牙需要位置权限，iOS 端保留该说明以备兼容"
+                },
+                "dSYMs" : false
+            },
+            "sdkConfigs" : {}
+        }
+    },
+    "quickapp" : {},
+    "mp-weixin" : {
+        "appid" : "",
+        "setting" : {
+            "urlCheck" : false,
+            "es6" : true
+        },
+        "usingComponents" : true
+    },
+    "h5" : {
+        "title" : "时欢智能空调助手"
+    }
+}
