@@ -926,14 +926,13 @@ void loop()
 #ifndef BLE_ONLY
     wifiManager.loop();
     mqttManager.loop();
-    // HomeSpan 在 WiFi 首次连上后才初始化。
-    // WiFi 断开期间暂停 poll：避免 HomeSpan 内部阻塞式重连和 WifiManagerEx 抢射频，
-    // 也防止配网热点下手机 captive portal 请求被 HomeSpan 内部 Web 服务器处理而刷 Bad GET request。
-    if (wifiManager.isConnected()) {
+
+    // HomeSpan 在 WiFi 首次连上后才初始化；断网期间暂停轮询，避免
+    // HomeSpan 自己的连接逻辑与 WifiManagerEx 抢占同一无线射频。
+    if (wifiManager.isConnected())
       initHomeSpan();
-      if (homeSpanStarted)
-        homeSpan.poll();
-    }
+    if (homeSpanStarted && !wifiManager.isConfigPortalActive())
+      homeSpan.poll();
     timerManager.loop();
 
     // OTA 异步下载驱动：分片读取 + MQTT 进度上报
