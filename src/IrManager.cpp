@@ -18,6 +18,9 @@ static int pendingSpeed = 2;
 static int pendingMode = 1;
 static bool pendingPower = true;
 static volatile bool irSendPending = false;
+static volatile uint32_t irRequestCount = 0;
+static volatile uint32_t irTransmitCount = 0;
+static volatile uint32_t irOverwriteCount = 0;
 // 调温滑块会在一次拖动中产生很多中间值。连续发送完整红外帧会让
 // 空调接收器丢帧，因此等待最后一次请求稳定一小段时间后再发射。
 static volatile unsigned long irLastRequestMs = 0;
@@ -64,6 +67,7 @@ void irTaskFunction(void *parameter)
             DBG("待发射参数 - 温度: %d, 风速: %d, 模式: %d, 电源: %s\n", temp, speed, mode, power ? "开启" : "关闭");
 
             ac.sendAc();
+            irTransmitCount++;
             delay(100);
 
             ledManager.off();
@@ -108,14 +112,27 @@ void IrManager::loop() {}
 void IrManager::send(int temp, int speed, int mode, bool power)
 {
     portENTER_CRITICAL(&irMux);
+    if (irSendPending)
+        irOverwriteCount++;
     pendingTemp = temp;
     pendingSpeed = speed;
     pendingMode = mode;
     pendingPower = power;
     irLastRequestMs = millis();
     irSendPending = true;
+    irRequestCount++;
     portEXIT_CRITICAL(&irMux);
     DBG("已请求红外发射: 温度:%d℃, 风速:%d, 模式:%d, 电源:%s\n", temp, speed, mode, power ? "开启" : "关闭");
 }
 
 String IrManager::learnProtocol() { return ""; }
+
+uint32_t IrManager::requestCount() const { return irRequestCount; }
+uint32_t IrManager::transmitCount() const { return irTransmitCount; }
+uint32_t IrManager::overwriteCount() const { return irOverwriteCount; }
+uint32_t IrManager::taskStackFreeBytes() const
+{
+    if (irTaskHandle == nullptr)
+        return 0;
+    return (uint32_t)uxTaskGetStackHighWaterMark(irTaskHandle) * sizeof(StackType_t);
+}

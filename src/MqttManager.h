@@ -18,6 +18,9 @@ public:
     void publishStatus();       // 发布温湿度/空调状态到 <topic>/status
     void disconnect();          // 主动断开（切回 BLE 模式时调用）
     bool isConnected();
+    uint32_t receivedCount() const;
+    uint32_t rejectedCount() const;
+    uint32_t maxMessageLength() const;
     void setConfig(const String &host, uint16_t port, const String &user, const String &pass, const String &topic);
     String getConfigJson();
 
@@ -31,6 +34,9 @@ private:
     String topic = "";
     unsigned long lastStatusTime = 0;
     unsigned long lastConnectAttempt = 0;
+    uint32_t rxCount = 0;
+    uint32_t rxRejected = 0;
+    uint32_t rxMaxLength = 0;
 
     void loadConfig();
     void saveConfig();

@@ -24,6 +24,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
 #include <map>
 #include <DeviceConfig.h>
 // ======================== 对象化模块 ========================
@@ -872,8 +874,7 @@ void sendEnvironmentDataIfNeeded()
 
 void loop()
 {
-  // 保持主循环响应性：50ms 会让 MQTT/BLE/HomeKit 指令明显发“粘”。
-  // delay(2) 仍会让 FreeRTOS/WiFi/BLE 任务获得调度时间。
+  // 保持主循环响应性：短暂让 FreeRTOS/WiFi/BLE 任务获得调度时间。
   delay(otaManager.isDownloading() ? 1 : 2);
 
   if (requestFactoryReset)
@@ -968,6 +969,35 @@ void loop()
 #else
     timerManager.loop();
 #endif
+  }
+
+  // 低频运行诊断：用于定位“运行越久越卡”，不在每次循环打印，避免诊断本身拖慢设备。
+  {
+    static unsigned long lastDiagMs = 0;
+    const unsigned long now = millis();
+    if (now - lastDiagMs >= 30000UL)
+    {
+      lastDiagMs = now;
+      size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+      size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+      UBaseType_t loopStack = uxTaskGetStackHighWaterMark(nullptr);
+      Serial.printf("[DIAG] uptime=%lus reset=%d heap=%u minHeap=%u largest=%u loopStack=%u irReq=%lu irTx=%lu irOverwrite=%lu irStack=%u",
+                    now / 1000UL, (int)esp_reset_reason(), (unsigned)freeHeap,
+                    (unsigned)ESP.getMinFreeHeap(), (unsigned)largestBlock,
+                    (unsigned)(loopStack * sizeof(StackType_t)),
+                    (unsigned long)irManager.requestCount(),
+                    (unsigned long)irManager.transmitCount(),
+                    (unsigned long)irManager.overwriteCount(),
+                    (unsigned)irManager.taskStackFreeBytes());
+#ifndef BLE_ONLY
+      Serial.printf(" mqttRx=%lu mqttReject=%lu mqttMax=%lu mqtt=%s",
+                    (unsigned long)mqttManager.receivedCount(),
+                    (unsigned long)mqttManager.rejectedCount(),
+                    (unsigned long)mqttManager.maxMessageLength(),
+                    mqttManager.isConnected() ? "on" : "off");
+#endif
+      Serial.println();
+    }
   }
 #ifdef DEBUG_LOG
   // IRrecvDump(); // 详细日志模式下解析并打印收到的红外信号

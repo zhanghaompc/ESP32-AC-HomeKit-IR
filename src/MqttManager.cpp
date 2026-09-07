@@ -228,13 +228,28 @@ bool MqttManager::isConnected()
 
 void MqttManager::handleMessage(char *topic, byte *payload, unsigned int length)
 {
+    rxCount++;
+    if (length > rxMaxLength)
+        rxMaxLength = length;
+    // 控制指令通常只有几十字节；拒绝异常长消息，避免 String 无限扩容。
+    if (length > 512)
+    {
+        rxRejected++;
+        DBG("[MQTT] 忽略超长消息 length=%u\n", length);
+        return;
+    }
     String msg;
+    msg.reserve(length + 1);
     for (unsigned int i = 0; i < length; i++)
         msg += (char)payload[i];
     DBG("[MQTT] 收到指令: %s\n", msg.c_str());
     // 复用 BLE 同一套指令处理逻辑（开机/调温/模式/风速/协议/定时/查询等）
     bleManager.handleCommand(msg);
 }
+
+uint32_t MqttManager::receivedCount() const { return rxCount; }
+uint32_t MqttManager::rejectedCount() const { return rxRejected; }
+uint32_t MqttManager::maxMessageLength() const { return rxMaxLength; }
 
 void MqttManager::onMessage(char *topic, byte *payload, unsigned int length)
 {
