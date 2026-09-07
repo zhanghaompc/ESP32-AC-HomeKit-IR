@@ -26,6 +26,9 @@ public:
     void enable();
     void disable();
     bool isConnected() const;
+    // 配网门户是否开启中（开启期间应暂停 HomeSpan 的 WiFi 状态机，
+    // 避免它持有凭据时反复 WiFi.begin() 抢占射频导致配网页打不开）
+    bool isConfigPortalActive() const { return configPortalActive; }
     // 手动拉起配网热点（按键/指令触发），会重置退避计时
     void startConfigPortal();
 
@@ -55,6 +58,8 @@ private:
     int scanState = -2; // -2=未开始 -1=进行中 >=0=结果数
     unsigned long scanStartTime = 0;
     static const unsigned long scanTimeoutMs = 15000;
+    // 扫描期间临时暂停 STA：ESP32 单射频，STA 处于连接/重连中时驱动拒绝扫描
+    bool staPausedForScan = false;
 
     String pendingSsid;
     String pendingPass;
@@ -68,11 +73,13 @@ private:
     void startWebServer();
     void stopWebServer();
     void startAccessPoint();
+    void resetWifiStack();
     void stopConfigPortal();
     void connectWiFi();
     void disconnectWiFi();
     void syncHomeSpanWifi();
     void handleScanRequest();
+    void resumeStaAfterScan();
     bool loadWifiCredentials(String &ssid, String &pass);
     void saveWifiCredentials(const String &ssid, const String &pass);
     String buildConfigPageHtml(const String &apName);

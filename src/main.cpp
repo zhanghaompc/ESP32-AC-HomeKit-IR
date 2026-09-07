@@ -705,16 +705,29 @@ struct DEV_MODE_SWITCH : Service::Switch
 // HomeSpan 延迟初始化：只在 WiFi 真正连上之后调用，且全程只调一次。
 // homeSpan.begin() 内部会拉起 HomeSpan 的 WiFi 状态机，所以必须等
 // WifiManagerEx 完成连接、不再需要抢射频时才执行。
+bool homeSpanConfigured = false; // accessory 是否已定义过（只需一次，WiFi 断/恢复不重建）
 bool homeSpanStarted = false;
 
 void initHomeSpan()
 {
-  if (homeSpanStarted)
+  if (homeSpanConfigured)
+  {
+    // WiFi 恢复：只需重新监听 HAP 端口（accessory 定义仍在内存里），
+    // mDNS 广播随 STA 接口恢复自动继续（期间从未调用 MDNS.end()）。
+    homeSpan.startHapServer();
+    homeSpanStarted = true;
+    Serial.println("[HomeKit] WiFi 已恢复，HAP 服务器重新监听 80");
     return;
+  }
+
+  homeSpanConfigured = true;
   homeSpanStarted = true;
 
   Serial.println("[HomeKit] WiFi 已就绪，初始化 HomeSpan...");
   homeSpan.setPairingCode("11122333");
+  // HomeSpan 保持默认 80 端口（iOS HomeKit 对 HAP 端口有硬性要求）。
+  // 配网门户也在 80 端口——靠"WiFi 断开时 stopHapServer() 释放 80"错开，
+  // 见 loop() 里的断连检测。
   homeSpan.begin(Category::AirConditioners, "空调");
   new SpanAccessory();
   new Service::AccessoryInformation();
@@ -1037,11 +1050,24 @@ void loop()
 #ifndef BLE_ONLY
     wifiManager.loop();
     mqttManager.loop();
-    // HomeSpan 在 WiFi 首次连上后才初始化，之后持续 poll。
-    // 断网期间不需要停 poll —— HomeSpan 此时不管 WiFi，不会和配网热点冲突。
-    if (wifiManager.isConnected())
+
+    // WiFi 断开时停掉 HomeSpan：①释放 80 端口给配网门户（门户在 80 起
+    // HTTP，两者错开使用）；②停 poll，避免 HomeSpan 的 checkConnect() 在
+    // 断网后反复 WiFi.begin() 抢占射频。WiFi 恢复后 initHomeSpan() 里
+    // startHapServer() 重新监听，HomeKit 自动回来。
+    static bool lastLinkUp = false;
+    bool linkUp = wifiManager.isConnected();
+    if (homeSpanConfigured && lastLinkUp && !linkUp)
+    {
+      homeSpan.stopHapServer();
+      homeSpanStarted = false;
+      Serial.println("[HomeKit] WiFi 断开，HAP 服务器已停止（释放 80 端口）");
+    }
+    lastLinkUp = linkUp;
+
+    if (linkUp && !homeSpanStarted)
       initHomeSpan();
-    if (homeSpanStarted)
+    if (homeSpanStarted && !wifiManager.isConfigPortalActive())
       homeSpan.poll();
     timerManager.loop();
 
