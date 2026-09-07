@@ -18,6 +18,10 @@ static int pendingSpeed = 2;
 static int pendingMode = 1;
 static bool pendingPower = true;
 static volatile bool irSendPending = false;
+// 调温滑块会在一次拖动中产生很多中间值。连续发送完整红外帧会让
+// 空调接收器丢帧，因此等待最后一次请求稳定一小段时间后再发射。
+static volatile unsigned long irLastRequestMs = 0;
+static const unsigned long IR_DEBOUNCE_MS = 180;
 static TaskHandle_t irTaskHandle = NULL;
 static portMUX_TYPE irMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -30,6 +34,14 @@ void irTaskFunction(void *parameter)
     {
         if (irSendPending)
         {
+            // 合并短时间内连续到达的温度/模式更新，只发送最后一帧。
+            // 读取时间放在临界区外也安全：写入方只会单调更新该时间戳。
+            if (millis() - irLastRequestMs < IR_DEBOUNCE_MS)
+            {
+                delay(5);
+                continue;
+            }
+
             portENTER_CRITICAL(&irMux);
             temp = pendingTemp;
             speed = pendingSpeed;
@@ -100,6 +112,7 @@ void IrManager::send(int temp, int speed, int mode, bool power)
     pendingSpeed = speed;
     pendingMode = mode;
     pendingPower = power;
+    irLastRequestMs = millis();
     irSendPending = true;
     portEXIT_CRITICAL(&irMux);
     DBG("已请求红外发射: 温度:%d℃, 风速:%d, 模式:%d, 电源:%s\n", temp, speed, mode, power ? "开启" : "关闭");

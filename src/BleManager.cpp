@@ -3,6 +3,7 @@
 #include "IrManager.h"
 #include "TimerManager.h"
 #include "OtaManager.h"
+#include "WifiManagerEx.h"
 #include "Debug.h"
 #include <Arduino.h>
 #include <FastLED.h>
@@ -17,6 +18,7 @@ extern LedManager ledManager;
 extern IrManager irManager;
 extern TimerManager timerManager;
 extern OtaManager otaManager;
+extern WifiManagerEx wifiManager;
 extern bool requestSwitchToWiFi;
 extern bool requestFactoryReset;
 extern bool isBLEMode;
@@ -139,7 +141,6 @@ void BleManager::loop()
 {
     if (!deviceConnected && oldDeviceConnected)
     {
-        delay(500);
         oldDeviceConnected = false;
     }
     if (deviceConnected && !oldDeviceConnected)
@@ -635,6 +636,17 @@ void BleManager::handleCommand(const String &command)
     }
 
     // 恢复出厂设置（清除 HomeKit 配对 / WiFi / 定时任务）
+#ifndef BLE_ONLY
+    // 清除 WiFi 凭据并打开配网热点，不删除 HomeKit/定时任务。
+    if (command == "wifi_config")
+    {
+        wifiManager.startReconfigurePortal();
+        sendChunked("wifi_config=ok");
+        giveMutex();
+        return;
+    }
+#endif
+
     if (command == "reset_factory")
     {
         sendChunked("reset=ok");

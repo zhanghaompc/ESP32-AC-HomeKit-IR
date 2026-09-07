@@ -2,11 +2,12 @@
 <html lang="zh-CN">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#f2f2f7">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f2f2f7" />
   <title>MQTT 远程控制</title>
   <style>
+    /* ===== 基础变量 ===== */
     :root {
       --bg: #f2f2f7;
       --card: #ffffff;
@@ -37,6 +38,7 @@
 
     html {
       color-scheme: light;
+      height: 100%;
     }
 
     body {
@@ -48,8 +50,57 @@
       font-size: 16px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      width: 100%;
     }
 
+    /* ===== 页面容器 ===== */
+    .page-container {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .page {
+      display: none;
+      width: 100%;
+      animation: pageFadeIn .3s ease;
+    }
+
+    .page.active {
+      display: block;
+    }
+
+    @keyframes pageFadeIn {
+      0% {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* ===== 控件禁用状态 ===== */
+    .controls-disabled .control-action,
+    .controls-disabled .switch,
+    .controls-disabled .temp-btn,
+    .controls-disabled .grid button,
+    .controls-disabled .protocol-row button,
+    .controls-disabled .quick button,
+    .controls-disabled .card .row button {
+      pointer-events: none !important;
+      opacity: 0.5 !important;
+      transition: opacity 0.2s;
+    }
+
+    .controls-disabled .temp-val {
+      cursor: default !important;
+    }
+
+    /* ===== 复用组件 ===== */
     header {
       display: flex;
       align-items: center;
@@ -68,6 +119,7 @@
       justify-content: center;
       font-size: 22px;
       box-shadow: 0 4px 12px rgba(0, 122, 255, .3);
+      flex-shrink: 0;
     }
 
     header h1 {
@@ -97,6 +149,7 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
     }
 
     .pill::before {
@@ -157,7 +210,33 @@
       margin-bottom: 18px;
     }
 
-    /* ========== 重点：增大折叠summary点击区域、字号 ========== */
+    .card-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .card-heading h2 {
+      margin-bottom: 18px;
+    }
+
+    .card-heading button {
+      padding: 6px 11px;
+      font-size: 13px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      margin-bottom: 18px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .card-heading button:active {
+      transform: scale(.96);
+    }
+
     .fold {
       margin-bottom: 16px;
     }
@@ -168,7 +247,6 @@
       background: var(--card);
       border-radius: var(--radius);
       padding: 22px 22px;
-      /* 增大上下内边距，扩大点击热区 */
       box-shadow: var(--shadow);
       display: flex;
       align-items: center;
@@ -177,6 +255,7 @@
       font-weight: 600;
       color: var(--text);
       width: 100%;
+      user-select: none;
     }
 
     .fold>summary::-webkit-details-marker {
@@ -418,7 +497,7 @@
       font-variant-numeric: tabular-nums;
       color: var(--text);
       line-height: 1;
-      cursor: pointer;
+      cursor: text;
       position: relative;
     }
 
@@ -535,30 +614,6 @@
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
 
-    .state-list {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-    }
-
-    .state-list div {
-      background: var(--card-2);
-      border-radius: 14px;
-      padding: 14px 16px;
-    }
-
-    .state-list .k {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .state-list .v {
-      font-size: 18px;
-      font-weight: 600;
-      margin-top: 4px;
-      font-variant-numeric: tabular-nums;
-    }
-
     .quick {
       display: flex;
       gap: 10px;
@@ -595,6 +650,172 @@
       margin-right: 10px;
     }
 
+    /* ===== 定时页 ===== */
+    .timer-empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 26px 8px;
+      background: var(--card-2);
+      border-radius: 14px;
+    }
+
+    .timer-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .timer-item:last-child {
+      border-bottom: 0;
+    }
+
+    .timer-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .timer-time {
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .timer-desc {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 3px;
+    }
+
+    .timer-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .timer-actions button {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .timer-switch {
+      transform: scale(.82);
+      transform-origin: right center;
+    }
+
+    .timer-form .row label {
+      width: 58px;
+    }
+
+    .timer-form .row {
+      margin-bottom: 10px;
+    }
+
+    .timer-form .split {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .timer-form .split>* {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .timer-note {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .nav-btn {
+      padding: 8px 12px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .nav-btn:active {
+      transform: scale(.96);
+    }
+
+    .page-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 4px 24px;
+    }
+
+    .page-title h1 {
+      font-size: 22px;
+      font-weight: 700;
+      flex: 1;
+    }
+
+    /* ===== OTA 辅助 ===== */
+    #otaConfirm {
+      display: none;
+      background: #fff3cd;
+      border: 1px solid #e0c060;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      font-size: 13px;
+    }
+
+    #otaConfirm button {
+      padding: 8px;
+      border: 0;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    #otaConfirm .btn-confirm {
+      background: #007aff;
+      color: #fff;
+      flex: 1;
+    }
+
+    #otaConfirm .btn-cancel {
+      background: #e9ecf1;
+      color: #333;
+      flex: 1;
+    }
+
+    #otaProgressWrap {
+      display: none;
+      margin: 8px 0;
+    }
+
+    #otaProgressWrap .bar-bg {
+      height: 8px;
+      background: #e9ecf1;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #otaProgressWrap .bar {
+      height: 100%;
+      width: 0%;
+      background: #007aff;
+      transition: width .3s;
+    }
+
+    #otaProgressWrap .label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    /* ===== 响应式 ===== */
     @media (min-width: 640px) {
       body {
         max-width: 560px;
@@ -612,134 +833,885 @@
 </head>
 
 <body>
-  <header>
-    <div class="logo">❄</div>
-    <div>
-      <h1>空调控制</h1>
-      <div class="sub">ESP8266/32 · MQTT 远程</div>
-    </div>
-    <div class="spacer"></div>
-    <span id="status" class="pill off">未连接</span>
-    <span id="devStatus" class="pill off">设备离线</span>
-  </header>
-  <!-- 增加 open 属性，页面加载自动展开连接配置 -->
-  <details class="fold" open>
-    <summary>连接配置 <span class="chev">▾</span></summary>
-    <div class="fold-body">
-      <div class="row"><label>服务器</label><input id="host" placeholder="broker-cn.emqx.io"></div>
-      <div class="row"><label>端口</label><input id="port" type="number" placeholder="8084"><label
-          style="width:auto">加密</label>
-        <div class="switch" id="tlsSwitch" onclick="toggleTls()"></div>
-      </div>
-      <div class="row"><label>路径</label><input id="path" placeholder="/mqtt"></div>
-      <div class="row"><label>用户名</label><input id="username" placeholder="留空 = 匿名"></div>
-      <div class="row"><label>密码</label><input id="password" type="password" placeholder="留空 = 匿名"></div>
-      <div class="row"><label>设备类型</label><select id="devType"><option value="esp32">ESP32 空调</option><option value="esp8266">ESP8266 空调</option></select></div>
-      <div class="row"><label>主题</label><input id="topic" list="topicHistory" placeholder="ac/esp32acxxxx"><datalist id="topicHistory"></datalist></div>
-      <div class="row"><button id="btnConnect" class="primary" style="flex:1">连接</button><button id="btnDisconnect"
-          class="danger" style="flex:1">断开</button></div>
-    </div>
-  </details>
-  <div class="card">
-    <h2>空调控制</h2>
-    <!-- 电源挪到最上面 -->
-    <div class="power-row">
-      <div class="label">电源<small>点击开关空调</small></div>
-      <div class="switch-wrap">
-        <div class="switch" id="powerSwitch" onclick="togglePower()"></div><span id="powerText"
-          style="font-size:15px">关</span>
-      </div>
-    </div>
 
-    <div class="temp-section">
-      <div class="env" id="env"><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#007aff"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
-          </svg>室温 <b>--℃</b></span><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
-          </svg>湿度 <b>--%</b></span><span class="env-item">协议 <b style="color:#007aff">--</b></span></div>
-      <div class="temp-control">
-        <button class="temp-btn" onclick="tempStep(-1)">−</button>
-        <div class="temp-display">
-          <div class="temp-val" id="tempValWrap">
-            <span id="tempVal">26</span><span class="unit">°C</span>
-          </div>
-          <div class="temp-label">目标温度（点击数字编辑）</div>
+  <div class="page-container">
+
+    <!-- ==================== 控制页 ==================== -->
+    <div class="page active" id="controlPage">
+      <header>
+        <div class="logo">❄</div>
+        <div>
+          <h1>空调控制</h1>
+          <div class="sub">ESP8266/32 · MQTT 远程</div>
         </div>
-        <button class="temp-btn" onclick="tempStep(1)">+</button>
+        <div class="spacer"></div>
+        <span id="status" class="pill off">未连接</span>
+        <span id="devStatus" class="pill off">设备离线</span>
+      </header>
+
+      <!-- 连接配置：id="connectDetails"，由 JS 动态控制 open 属性 -->
+      <details class="fold" id="connectDetails">
+        <summary>连接配置 <span class="chev">▾</span></summary>
+        <div class="fold-body">
+          <div class="row"><label>服务器</label><input id="host" placeholder="broker-cn.emqx.io"></div>
+          <div class="row"><label>端口</label><input id="port" type="number" placeholder="8084"><label
+              style="width:auto">加密</label>
+            <div class="switch" id="tlsSwitch" onclick="toggleTls()"></div>
+          </div>
+          <div class="row"><label>路径</label><input id="path" placeholder="/mqtt"></div>
+          <div class="row"><label>用户名</label><input id="username" placeholder="留空 = 匿名"></div>
+          <div class="row"><label>密码</label><input id="password" type="password" placeholder="留空 = 匿名"></div>
+          <div class="row"><label>设备类型</label><select id="devType">
+              <option value="esp32">ESP32 空调</option>
+              <option value="esp8266">ESP8266 空调</option>
+            </select></div>
+          <div class="row"><label>主题</label><input id="topic" list="topicHistory" placeholder="ac/esp32/xxxx"><datalist
+              id="topicHistory"></datalist></div>
+          <div class="row"><button id="btnConnect" class="primary" style="flex:1">连接</button><button id="btnDisconnect"
+              class="danger" style="flex:1">断开</button></div>
+        </div>
+      </details>
+
+      <!-- 所有控制按钮加上 class="control-action" -->
+      <div class="card" id="controlCard">
+        <div class="card-heading">
+          <h2>空调控制</h2>
+          <button class="nav-btn" onclick="showTimerPage()">定时 →</button>
+        </div>
+
+        <div class="power-row">
+          <div class="label">电源<small>点击开关空调</small></div>
+          <div class="switch-wrap">
+            <div class="switch control-action" id="powerSwitch" onclick="togglePower()"></div>
+            <span id="powerText" style="font-size:15px">关</span>
+          </div>
+        </div>
+
+        <div class="temp-section">
+          <div class="env" id="env">
+            <span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
+              </svg>室温 <b>--℃</b></span>
+            <span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+              </svg>湿度 <b>--%</b></span>
+            <span class="env-item">协议 <b style="color:#007aff">--</b></span>
+          </div>
+          <div class="temp-control">
+            <button class="temp-btn control-action" onclick="tempStep(-1)">−</button>
+            <div class="temp-display">
+              <div class="temp-val" id="tempValWrap">
+                <span id="tempVal">26</span><span class="unit">°C</span>
+              </div>
+              <div class="temp-label">目标温度（点击数字编辑）</div>
+            </div>
+            <button class="temp-btn control-action" onclick="tempStep(1)">+</button>
+          </div>
+        </div>
+
+        <div class="seg-label">运行模式</div>
+        <div class="grid" id="modeGrid"></div>
+
+        <div class="seg-label">风速</div>
+        <div class="grid" id="speedGrid"></div>
+
+        <div class="row protocol-row row-flex-wrap">
+          <label>协议</label>
+          <select id="protocolSel" class="control-action"></select>
+          <button class="primary control-action" onclick="startLearn()">协议学习</button>
+        </div>
+        <div class="status-text" id="learnStatus"></div>
+        <div class="status-text" id="pows"></div>
+      </div>
+
+      <div class="card">
+        <h2>附加功能</h2>
+        <div class="grid">
+          <button id="fTurbo" class="control-action" onclick="featToggle('fTurbo','turbo')">强劲</button>
+          <button id="fSwing" class="control-action" onclick="featToggle('fSwing','swing')">扫风</button>
+          <button id="fLight" class="control-action" onclick="featToggle('fLight','light')">面板灯</button>
+          <button id="fSleep" class="control-action" onclick="featToggle('fSleep','sleep')">睡眠</button>
+          <button id="fClean" class="control-action" onclick="featToggle('fClean','clean')">自清洁</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <label>固件</label>
+          <span id="fwVer" style="flex:1;font-variant-numeric:tabular-nums">--</span>
+          <button class="control-action" onclick="checkUpdateUI()">检查更新</button>
+        </div>
+        <div class="status-text" id="otaStatus"></div>
+        <div id="otaConfirm">
+          <div id="otaConfirmMsg"></div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button type="button" class="btn-confirm" onclick="confirmUpdate()">立即更新</button>
+            <button type="button" class="btn-cancel"
+              onclick="document.getElementById('otaConfirm').style.display='none'">稍后</button>
+          </div>
+        </div>
+        <div id="otaProgressWrap">
+          <div class="bar-bg">
+            <div class="bar" id="otaProgressBar"></div>
+          </div>
+          <div class="label" id="otaProgressText"></div>
+        </div>
+        <div class="status-text">点击切换，状态同步至设备</div>
+      </div>
+
+      <details class="fold">
+        <summary>设备恢复 <span class="chev">▾</span></summary>
+        <div class="fold-body">
+          <div class="status-text" style="margin:0 0 14px">用于重新配置网络，或将设备恢复到初始状态。</div>
+          <div class="quick">
+            <button class="control-action" onclick="reconfigureDevice()">重新配网</button>
+            <button class="danger control-action" onclick="resetFactoryFromPage()">恢复出厂设置</button>
+          </div>
+          <div class="status-text" id="recoveryStatus"></div>
+          <div class="timer-note">重新配网会清除 Wi‑Fi 配置并打开设备热点，不会删除 HomeKit 配对和定时任务。恢复出厂设置会清除 Wi‑Fi、HomeKit
+            配对、定时任务和协议配置，并重启设备。</div>
+        </div>
+      </details>
+
+      <details class="fold">
+        <summary>消息日志 <span class="chev">▾</span></summary>
+        <div class="fold-body">
+          <div class="log" id="log"></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- ==================== 定时页 ==================== -->
+    <div class="page" id="timerPage">
+      <div class="page-title">
+        <div class="logo">⏰</div>
+        <h1>定时任务</h1>
+        <button class="nav-btn" onclick="showControlPage()">← 空调控制</button>
+      </div>
+
+      <div class="card timer-form">
+        <h2>添加定时</h2>
+        <div class="row"><label>时间</label>
+          <div class="split"><input id="timerHour" type="number" min="0" max="23" value="8" aria-label="小时"><input
+              id="timerMinute" type="number" min="0" max="59" value="0" aria-label="分钟"></div>
+        </div>
+        <div class="row"><label>温度</label><input id="timerTemp" type="number" min="16" max="30"
+            value="26"><span>℃</span></div>
+        <div class="row"><label>模式</label><select id="timerMode"></select></div>
+        <div class="row"><label>风速</label><select id="timerSpeed"></select></div>
+        <div class="row"><label>动作</label><select id="timerPower">
+            <option value="on">开机</option>
+            <option value="off">关机</option>
+          </select></div>
+        <div class="row"><label>重复</label><select id="timerRepeat">
+            <option value="1">每天</option>
+            <option value="0">仅一次</option>
+          </select></div>
+        <button class="primary" style="width:100%;margin-top:4px" onclick="addTimerFromPage()">添加定时任务</button>
+        <div class="timer-note">设备需要联网并完成时间同步，定时任务最多保存 10 条。</div>
+      </div>
+
+      <div class="card">
+        <h2>已添加任务</h2>
+        <div id="timerList">
+          <div class="timer-empty">连接设备后加载定时任务</div>
+        </div>
+        <div class="quick">
+          <button onclick="syncDeviceTime()">同步手机时间</button>
+          <button class="primary" onclick="loadTimers()">刷新列表</button>
+        </div>
+        <div class="timer-note" id="webClock">网页当前时间：--</div>
+        <div class="status-text" id="timerStatus"></div>
       </div>
     </div>
 
-    <div class="seg-label">运行模式</div>
-    <div class="grid" id="modeGrid"></div>
-    <div class="seg-label">风速</div>
-    <div class="grid" id="speedGrid"></div>
-
-    <div class="row protocol-row row-flex-wrap">
-      <label>协议</label>
-      <select id="protocolSel"></select>
-      <button class="primary" onclick="startLearn()">协议学习</button>
-    </div>
-    <div class="status-text" id="learnStatus"></div>
-    <div class="status-text" id="pows"></div>
-  </div>
-
-  <div class="card">
-    <h2>附加功能</h2>
-    <div class="grid">
-      <button id="fTurbo" onclick="featToggle('fTurbo','turbo')">强劲</button>
-      <button id="fSwing" onclick="featToggle('fSwing','swing')">扫风</button>
-      <button id="fLight" onclick="featToggle('fLight','light')">面板灯</button>
-      <button id="fSleep" onclick="featToggle('fSleep','sleep')">睡眠</button>
-      <button id="fClean" onclick="featToggle('fClean','clean')">自清洁</button>
-    </div>
-    <div class="row" style="margin-top:12px"><label>固件</label><span id="fwVer" style="flex:1;font-variant-numeric:tabular-nums">--</span><button onclick="checkUpdate()">检查更新</button></div>
-    <div class="status-text" id="otaStatus"></div>
-<div id="otaConfirm" style="display:none;background:#fff3cd;border:1px solid #e0c060;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:13px">
-  <div id="otaConfirmMsg"></div>
-  <div style="margin-top:8px;display:flex;gap:8px">
-    <button type="button" style="flex:1;padding:8px;border:0;border-radius:6px;background:#007aff;color:#fff" onclick="confirmUpdate()">立即更新</button>
-    <button type="button" style="flex:1;padding:8px;border:0;border-radius:6px;background:#e9ecf1;color:#333" onclick="document.getElementById('otaConfirm').style.display='none'">稍后</button>
-  </div>
-</div>
-<div id="otaProgressWrap" style="display:none;margin:8px 0">
-  <div style="height:8px;background:#e9ecf1;border-radius:4px;overflow:hidden">
-    <div id="otaProgressBar" style="height:100%;width:0%;background:#007aff;transition:width .3s"></div>
-  </div>
-  <div id="otaProgressText" style="font-size:12px;color:#666;margin-top:4px"></div>
-</div>
-    <div class="status-text">点击切换，状态同步至设备</div>
-  </div>
-
-  <details class="fold">
-    <summary>通用发布 <span class="chev">▾</span></summary>
-    <div class="fold-body">
-      <div class="row"><label>主题</label><input id="pubTopic" placeholder="topic/in"></div>
-      <div class="row"><label>内容</label><input id="pubPayload" placeholder="JSON 或文本"></div>
-      <div class="quick"><button onclick="quickPlug('1')">插座开</button><button
-          onclick="quickPlug('0')">插座关</button><button class="primary" onclick="pubSend()">发送</button></div>
-    </div>
-  </details>
-  <details class="fold">
-    <summary>消息日志 <span class="chev">▾</span></summary>
-    <div class="fold-body">
-      <div class="log" id="log"></div>
-    </div>
-  </details>
+  </div><!-- /page-container -->
 
   <script src="mqtt.min.js"></script>
   <script>
+    // ============================================================
+    //  常量 & 状态
+    // ============================================================
     const MODES = ["自动", "制冷", "制热", "除湿", "送风"];
     const SPEEDS = ["自动", "低速", "中速", "高速", "最大"];
     const PROTOCOLS = ["AC", "AMCOR", "AIRWELL", "AIRTON", "ARGO", "ARRIS", "BOSE", "BOSCH144", "CARRIER_AC", "CARRIER_AC40", "CARRIER_AC64", "CARRIER_AC84", "CARRIER_AC128", "CLIMABUTLER", "COOLIX", "COOLIX48", "CORONA_AC", "DAIKIN", "DAIKIN2", "DAIKIN64", "DAIKIN128", "DAIKIN152", "DAIKIN160", "DAIKIN176", "DAIKIN200", "DAIKIN216", "DAIKIN312", "DENON", "DELONGHI_AC", "DISH", "DOSHISHA", "ELECTRA_AC", "EPSON", "ECOCLIM", "ELITESCREENS", "GICABLE", "GLOBALCACHE", "GREE", "GOODWEATHER", "GORENJE", "HAIER_AC", "HAIER_AC160", "HAIER_AC176", "HAIER_AC_YRW02", "HITACHI_AC", "HITACHI_AC1", "HITACHI_AC2", "HITACHI_AC3", "HITACHI_AC264", "HITACHI_AC296", "HITACHI_AC344", "HITACHI_AC424", "INAX", "JVC", "KELON", "KELON168", "KELVINATOR", "LASERTAG", "LEGOPF", "LG", "LG2", "LUTRON", "MAGIQUEST", "MIDEA", "MIDEA24", "METZ", "MIRAGE", "MITSUBISHI", "MITSUBISHI2", "MITSUBISHI112", "MITSUBISHI136", "MITSUBISHI_AC", "MITSUBISHI_HEAVY_88", "MITSUBISHI_HEAVY_152", "MULTIBRACKETS", "MWM", "NEC", "NEC_LIKE", "NEOCLIMA", "NIKAI", "PANASONIC", "PANASONIC_AC", "PANASONIC_AC32", "PIONEER", "PRONTO", "RAW", "RC5", "RC5X", "RC6", "RCMM", "RHOSS", "SAMSUNG", "SAMSUNG36", "SAMSUNG_AC", "SANYO", "SANYO_AC", "SANYO_AC88", "SANYO_AC152", "SANYO_LC7461", "SAR", "SHARP", "SHARP_AC", "SHERWOOD", "SONY", "SONY_38K", "SYMPHONY", "TECHNIBEL_AC", "TECO", "TEKNOPOINT", "TCL96AC", "TCL112AC", "TOSHIBA_AC", "TOTO", "TRANSCOLD", "TRUMA", "TROTEC", "TROTEC_3550", "UNKNOWN", "UNUSED", "VESTEL_AC", "VOLTAS", "WHIRLPOOL_AC", "WHYNTER", "WOWWEE", "XMP", "YORK", "ZEPEAL"];
-    const PROTOCOL_CN = { AC: "通用空调", AMCOR: "安可达", AIRWELL: "艾尔威尔", AIRTON: "艾尔顿", ARGO: "阿尔戈", BOSCH144: "博世144位", CARRIER_AC: "开利", CARRIER_AC40: "开利40位", CARRIER_AC64: "开利64位", CARRIER_AC84: "开利84位", CARRIER_AC128: "开利128位", CLIMABUTLER: "气候管家", COOLIX: "美的", COOLIX48: "美的（48位）", CORONA_AC: "科罗纳", DAIKIN: "大金", DAIKIN2: "大金2", DAIKIN64: "大金64位", DAIKIN128: "大金128位", DAIKIN152: "大金152位", DAIKIN160: "大金160位", DAIKIN176: "大金176位", DAIKIN200: "大金200位", DAIKIN216: "大金216位", DAIKIN312: "大金312位", DENON: "天龙", DELONGHI_AC: "德龙", DOSHISHA: "同志社", ELECTRA_AC: "伊莱克特拉", EPSON: "爱普生", ECOCLIM: "环保气候", GREE: "格力", GOODWEATHER: "好天气", GORENJE: "戈兰尼", HAIER_AC: "海尔", HAIER_AC160: "海尔160位", HAIER_AC176: "海尔176位", HAIER_AC_YRW02: "海尔YRW02", HITACHI_AC: "日立", HITACHI_AC1: "日立1", HITACHI_AC2: "日立2", HITACHI_AC3: "日立3", HITACHI_AC264: "日立264位", HITACHI_AC296: "日立296位", HITACHI_AC344: "日立344位", HITACHI_AC424: "日立424位", INAX: "伊奈", JVC: "JVC", KELON: "科龙", KELON168: "科龙168位", KELVINATOR: "格力", LEGOPF: "乐高电源", LG: "LG", LG2: "LG2", MIDEA: "美的", MIDEA24: "美的24位", MIRAGE: "米拉奇", MITSUBISHI: "三菱", MITSUBISHI2: "三菱2", MITSUBISHI112: "三菱112位", MITSUBISHI136: "三菱136位", MITSUBISHI_AC: "三菱电机", MITSUBISHI_HEAVY_88: "三菱重工88位", MITSUBISHI_HEAVY_152: "三菱重工152位", NEC: "NEC", NEC_LIKE: "NEC兼容", NEOCLIMA: "新气候", NIKAI: "尼凯", PANASONIC: "松下", PANASONIC_AC: "松下空调", PANASONIC_AC32: "松下32位", PIONEER: "先锋", RHOSS: "罗斯", SAMSUNG: "三星", SAMSUNG36: "三星36位", SAMSUNG_AC: "三星空调", SANYO: "三洋", SANYO_AC: "三洋空调", SANYO_AC88: "三洋88位", SANYO_LC7461: "三洋LC7461", SHARP: "夏普", SHARP_AC: "夏普空调", SHERWOOD: "舍伍德", SONY: "索尼", SONY_38K: "索尼38K", SYMPHONY: "交响乐", TECHNIBEL_AC: "特奇贝尔", TECO: "东元", TCL96AC: "TCL96位", TCL112AC: "TCL112位", TOSHIBA_AC: "东芝空调", TOTO: "TOTO", TRANSCOLD: "创冷", TRUMA: "特鲁马", TROTEC: "特罗泰克", TROTEC_3550: "特罗泰克3550", UNKNOWN: "未知", UNUSED: "未使用", VESTEL_AC: "威斯特尔", VOLTAS: "沃尔塔斯", WHIRLPOOL_AC: "惠而浦", WHYNTER: "惠特", YORK: "约克", ZEPEAL: "泽皮尔" };
+    const PROTOCOL_CN = { AC: "通用空调", AMCOR: "安可达", AIRWELL: "艾尔威尔", AIRTON: "艾尔顿", ARGO: "阿尔戈", BOSCH144: "博世144位", CARRIER_AC: "开利", CARRIER_AC40: "开利40位", CARRIER_AC84: "开利84位", CARRIER_AC128: "开利128位", CLIMABUTLER: "气候管家", COOLIX: "美的", COOLIX48: "美的（48位）", CORONA_AC: "科罗纳", DAIKIN: "大金", DAIKIN2: "大金2", DAIKIN64: "大金64位", DAIKIN128: "大金128位", DAIKIN152: "大金152位", DAIKIN160: "大金160位", DAIKIN176: "大金176位", DAIKIN200: "大金200位", DAIKIN216: "大金216位", DAIKIN312: "大金312位", DENON: "天龙", DELONGHI_AC: "德龙", DOSHISHA: "同志社", ELECTRA_AC: "伊莱克特拉", EPSON: "爱普生", ECOCLIM: "环保气候", GREE: "格力", GOODWEATHER: "好天气", GORENJE: "戈兰尼", HAIER_AC: "海尔", HAIER_AC160: "海尔160位", HAIER_AC176: "海尔176位", HAIER_AC_YRW02: "海尔YRW02", HITACHI_AC: "日立", HITACHI_AC1: "日立1", HITACHI_AC2: "日立2", HITACHI_AC3: "日立3", HITACHI_AC264: "日立264位", HITACHI_AC296: "日立296位", HITACHI_AC344: "日立344位", HITACHI_AC424: "日立424位", INAX: "伊奈", JVC: "JVC", KELON: "科龙", KELON168: "科龙168位", KELVINATOR: "格力", LEGOPF: "乐高电源", LG: "LG", LG2: "LG2", MIDEA: "美的", MIDEA24: "美的24位", MIRAGE: "米拉奇", MITSUBISHI: "三菱", MITSUBISHI2: "三菱2", MITSUBISHI112: "三菱112位", MITSUBISHI136: "三菱136位", MITSUBISHI_AC: "三菱电机", MITSUBISHI_HEAVY_88: "三菱重工88位", MITSUBISHI_HEAVY_152: "三菱重工152位", NEC: "NEC", NEC_LIKE: "NEC兼容", NEOCLIMA: "新气候", NIKAI: "尼凯", PANASONIC: "松下", PANASONIC_AC: "松下空调", PANASONIC_AC32: "松下32位", PIONEER: "先锋", RHOSS: "罗斯", SAMSUNG: "三星", SAMSUNG36: "三星36位", SAMSUNG_AC: "三星空调", SANYO: "三洋", SANYO_AC: "三洋空调", SANYO_AC88: "三洋88位", SANYO_AC152: "三洋152位", SANYO_LC7461: "三洋LC7461", SHARP: "夏普", SHARP_AC: "夏普空调", SHERWOOD: "舍伍德", SONY: "索尼", SONY_38K: "索尼38K", SYMPHONY: "交响乐", TECHNIBEL_AC: "特奇贝尔", TECO: "东元", TCL96AC: "TCL96位", TCL112AC: "TCL112位", TOSHIBA_AC: "东芝空调", TOTO: "TOTO", TRANSCOLD: "创冷", TRUMA: "特鲁马", TROTEC: "特罗泰克", TROTEC_3550: "特罗泰克3550", UNKNOWN: "未知", UNUSED: "未使用", VESTEL_AC: "威斯特尔", VOLTAS: "沃尔塔斯", WHIRLPOOL_AC: "惠而浦", WHYNTER: "惠特", YORK: "约克", ZEPEAL: "泽皮尔" };
 
-    let client = null, temp = 26, modeIndex = 1, speedIndex = 2, powerOn = false, protocolName = "", curTemp = "--", curHumidity = "--";
-    let cfg = { host: "broker-cn.emqx.io", port: 8084, path: "/mqtt", tls: true, username: "", password: "", topic: "ac/esp32acxxxx", devType: "esp32" };
+    let client = null,
+      temp = 26,
+      modeIndex = 1,
+      speedIndex = 2,
+      powerOn = false,
+      protocolName = "",
+      curTemp = "--",
+      curHumidity = "--";
+    let cfg = { host: "broker-cn.emqx.io", port: 8084, path: "/mqtt", tls: true, username: "", password: "", topic: "ac/esp32/xxxx", devType: "esp32" };
+    let timerItems = [];
+    let lastDeviceHeartbeat = 0,
+      brokerConnectTime = 0,
+      otaCompletedUntil = 0,
+      otaHideTimer = 0,
+      pendingFw = null,
+      pendingUpdateCheck = false,
+      learnClearTimer = 0;
+    let isConnected = false;
+
     const $ = id => document.getElementById(id);
+    const DEVICE_STATUS_TOPIC = () => cfg.topic + "/status";
+    const DEVICE_OUT_TOPIC = () => cfg.topic + "/out";
+    const DEVICE_TIMEOUT_MS = 30000;
 
-    // ====== 点击温度数字直接编辑 =====
+    // ============================================================
+    //  页面切换
+    // ============================================================
+    function showTimerPage() {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      $('timerPage').classList.add('active');
+      loadTimers();
+    }
+
+    function showControlPage() {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      $('controlPage').classList.add('active');
+    }
+
+    (function () {
+      let startX = 0,
+        startY = 0;
+      const container = document.querySelector('.page-container');
+      container.addEventListener('touchstart', function (e) {
+        const p = e.touches[0];
+        startX = p.clientX;
+        startY = p.clientY;
+      }, { passive: true });
+      container.addEventListener('touchend', function (e) {
+        const p = e.changedTouches[0],
+          dx = p.clientX - startX,
+          dy = p.clientY - startY;
+        if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+        if (dx > 0) showTimerPage();
+        else showControlPage();
+      }, { passive: true });
+    }());
+
+    // ============================================================
+    //  控件禁用/启用
+    // ============================================================
+    function updateControlsEnabled(enabled) {
+      const controlPage = document.getElementById('controlPage');
+      if (enabled) {
+        controlPage.classList.remove('controls-disabled');
+      } else {
+        controlPage.classList.add('controls-disabled');
+      }
+    }
+
+    // ============================================================
+    //  定时页相关
+    // ============================================================
+    function timerStatus(text, color) {
+      const el = $("timerStatus");
+      if (el) {
+        el.textContent = text || "";
+        el.style.color = color || "var(--muted)";
+      }
+    }
+
+    function renderTimers() {
+      const box = $("timerList");
+      if (!box) return;
+      if (!timerItems.length) { box.innerHTML = '<div class="timer-empty">暂无定时任务</div>'; return; }
+      box.innerHTML = timerItems.map(function (t) {
+        const hh = String(t.hour).padStart(2, "0"),
+          mm = String(t.minute).padStart(2, "0");
+        const desc = (t.power ? "开机" : "关机") + " · " + (t.power ? (t.temp + "℃ · " + timerModeName(t
+          .mode) + " · " + timerSpeedName(t.speed)) : "") + " · " + (t.repeat ? "每天" : "仅一次");
+        return '<div class="timer-item"><div class="timer-main"><div class="timer-time">' + hh + ':' + mm +
+          '</div><div class="timer-desc">' + desc + '</div></div>' +
+          '<div class="timer-actions"><div class="switch timer-switch ' + (t.enabled ? 'on' : '') +
+          '" title="启用/停用" onclick="toggleTimer(' + t.id + ',' + (t.enabled ? 'false' : 'true') +
+          ')"></div><button class="danger" onclick="deleteTimer(' + t.id + ')">删除</button></div></div>';
+      }).join("");
+    }
+
+    function timerModeName(v) { return MODES[Number(v)] || "模式 " + v; }
+
+    function timerSpeedName(v) { return SPEEDS[Number(v)] || "风速 " + v; }
+
+    function loadTimers() {
+      if (!client || !client.connected) { timerStatus("请先连接 MQTT", "var(--warn)"); return; }
+      timerStatus("正在读取任务…", "var(--warn)");
+      send("timer=list");
+    }
+
+    function addTimerFromPage() {
+      const h = Math.max(0, Math.min(23, parseInt($("timerHour").value) || 0));
+      const m = Math.max(0, Math.min(59, parseInt($("timerMinute").value) || 0));
+      const t = Math.max(16, Math.min(30, parseInt($("timerTemp").value) || 26));
+      send("timer=add;hour=" + h + ";minute=" + m + ";temp=" + t + ";mode=" + $("timerMode").value +
+        ";speed=" + $("timerSpeed").value + ";power=" + $("timerPower").value + ";repeat=" + $(
+          "timerRepeat").value);
+      timerStatus("正在添加…", "var(--warn)");
+    }
+
+    function toggleTimer(id, enabled) { send("timer=enable;id=" + id + ";state=" + (enabled ? "1" : "0")); }
+
+    function deleteTimer(id) { if (confirm("删除这条定时任务？")) send("timer=delete;id=" + id); }
+
+    function syncDeviceTime() {
+      const d = new Date(),
+        pad = function (v) { return String(v).padStart(2, "0"); };
+      send("time=" + d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d
+        .getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()));
+      timerStatus("已发送手机时间", "var(--ok)");
+    }
+
+    function updateWebClock() {
+      const el = $("webClock");
+      if (!el) return;
+      const d = new Date(),
+        pad = function (v) { return String(v).padStart(2, "0"); };
+      el.textContent = "网页当前时间：" + d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+        " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    }
+    updateWebClock();
+    setInterval(updateWebClock, 1000);
+
+    MODES.forEach(function (m, i) {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = m;
+      $("timerMode").appendChild(o);
+    });
+    SPEEDS.forEach(function (s, i) {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = s;
+      $("timerSpeed").appendChild(o);
+    });
+
+    // ============================================================
+    //  配置 & 存储
+    // ============================================================
+    function topicHistory() {
+      try {
+        const h = JSON.parse(localStorage.getItem("mqtt_topic_history") || "[]"); return Array
+          .isArray(h) ? h : [];
+      } catch (e) { return []; }
+    }
+
+    function migrateTopicHistory() {
+      let h = topicHistory(),
+        changed = false;
+      h = h.map(function (item) {
+        const devType = item.devType || "esp32";
+        const p = (devType === "esp8266") ? "ac/esp8266/" : "ac/esp32/";
+        const suffix = topicSuffix(item.topic || "");
+        if (suffix && item.topic !== p + suffix) {
+          item.topic = p + suffix;
+          changed = true;
+        }
+        return item;
+      });
+      if (changed) { localStorage.setItem("mqtt_topic_history", JSON.stringify(h)); }
+      return h;
+    }
+
+    function renderTopicHistory() {
+      const list = $("topicHistory");
+      if (!list) return;
+      list.innerHTML = "";
+      migrateTopicHistory().forEach(function (item) {
+        const o = document.createElement("option");
+        o.value = item.topic;
+        o.label = item.topic + " · " + (item.devType === "esp8266" ? "ESP8266" : "ESP32");
+        list.appendChild(o);
+      });
+    }
+
+    function rememberTopic() {
+      const raw = $("topic").value.trim();
+      if (!raw) return;
+      applyDevType();
+      saveCfg();
+      const topic = $("topic").value.trim();
+      let h = topicHistory().filter(function (x) { return x.topic !== topic; });
+      h.unshift({
+        topic: topic, devType: $("devType").value, host: cfg.host, port: cfg.port, path: cfg.path,
+        tls: cfg.tls
+      });
+      localStorage.setItem("mqtt_topic_history", JSON.stringify(h.slice(0, 30)));
+      renderTopicHistory();
+    }
+
+    function selectHistoryTopic() {
+      const topic = $("topic").value.trim();
+      const x = topicHistory().find(function (item) { return item.topic === topic; });
+      if (!x) return;
+      $("devType").value = x.devType || "esp32";
+      if (x.host) {
+        $("host").value = x.host;
+        cfg.host = x.host;
+      }
+      if (x.port) {
+        $("port").value = x.port;
+        cfg.port = x.port;
+      }
+      if (x.path) {
+        $("path").value = x.path;
+        cfg.path = x.path;
+      }
+      if (typeof x.tls === "boolean") {
+        cfg.tls = x.tls;
+        $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : "");
+      }
+      applyDevType();
+      saveCfg();
+    }
+
+    function loadCfg() {
+      try { Object.assign(cfg, JSON.parse(localStorage.getItem("mqtt_cfg_web") || "{}")); } catch (e) { }
+      $("host").value = cfg.host;
+      $("port").value = cfg.port;
+      $("path").value = cfg.path;
+      $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : "");
+      $("username").value = cfg.username;
+      $("password").value = cfg.password;
+      $("topic").value = cfg.topic;
+      $("devType").value = cfg.devType || "esp32";
+      applyDevType();
+      saveCfg();
+      renderTopicHistory();
+    }
+
+    function saveCfg() {
+      cfg.host = $("host").value.trim() || "broker-cn.emqx.io";
+      cfg.port = parseInt($("port").value) || 8084;
+      cfg.path = $("path").value.trim() || "/mqtt";
+      cfg.username = $("username").value.trim();
+      cfg.password = $("password").value;
+      cfg.topic = $("topic").value.trim() || (($("devType").value === "esp8266") ? "ac/esp8266/xxxx" :
+        "ac/esp32/xxxx");
+      cfg.devType = $("devType").value;
+      localStorage.setItem("mqtt_cfg_web", JSON.stringify(cfg));
+    }
+
+    function toggleTls() {
+      cfg.tls = !cfg.tls;
+      $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : "");
+      saveCfg();
+    }
+
+    function topicSuffix(topic) {
+      const ps = ["ac/esp32ac", "ac/esp8266ac", "ac/esp32/", "ac/esp8266/", "ac/esp32", "ac/esp8266"];
+      for (let i = 0; i < ps.length; i++) {
+        if (topic.indexOf(ps[i]) === 0) return topic.substring(ps[i].length)
+          .trim();
+      }
+      return "";
+    }
+
+    function applyDevType() {
+      const t = $("devType").value;
+      const p = (t === "esp8266") ? "ac/esp8266/" : "ac/esp32/";
+      const cur = $("topic").value.trim();
+      if (cur.indexOf("ac/esp32") === 0 || cur.indexOf("ac/esp8266") === 0) {
+        const suffix = topicSuffix(cur);
+        $("topic").value = suffix ? p + suffix : p + "xxxx";
+      }
+      $("topic").placeholder = p + "xxxx";
+    }
+    $("devType").onchange = function () {
+      applyDevType();
+      saveCfg();
+    };
+
+    // ============================================================
+    //  MQTT 连接 / 状态
+    // ============================================================
+    function setStatus(text, cls) {
+      const s = $("status");
+      s.textContent = text;
+      s.className = "pill " + cls;
+    }
+
+    function setDevStatus(text, cls) {
+      const s = $("devStatus");
+      s.textContent = text;
+      s.className = "pill " + cls;
+    }
+
+    function setDeviceOnline(online) {
+      setDevStatus(online ? "设备在线" : "设备离线", online ? "on" : "off");
+      if (!online && Date.now() > otaCompletedUntil) clearOtaUi("设备离线，已取消更新状态");
+    }
+
+    function onDeviceStatus(msg) {
+      try {
+        const j = JSON.parse(msg);
+        if (typeof j.online === "boolean") {
+          if (j.online) {
+            lastDeviceHeartbeat = Date.now();
+            setDeviceOnline(true);
+          }
+          return;
+        }
+      } catch (e) { }
+      lastDeviceHeartbeat = Date.now();
+      setDeviceOnline(true);
+    }
+
+    function checkDevicePresence() {
+      if (!client || !client.connected) { setDeviceOnline(false); return; }
+      const now = Date.now();
+      if (lastDeviceHeartbeat && now - lastDeviceHeartbeat > DEVICE_TIMEOUT_MS) { setDeviceOnline(false); }
+      if (!lastDeviceHeartbeat && brokerConnectTime && now - brokerConnectTime > DEVICE_TIMEOUT_MS) {
+        setDeviceOnline(
+          false);
+      }
+    }
+    setInterval(checkDevicePresence, 5000);
+
+    function log(msg, incoming) {
+      const p = document.createElement("p");
+      if (incoming) p.className = "in";
+      const now = new Date().toTimeString().slice(0, 8);
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = now;
+      p.appendChild(t);
+      p.appendChild(document.createTextNode(msg));
+      const box = $("log");
+      box.insertBefore(p, box.firstChild);
+      while (box.children.length > 100) box.removeChild(box.lastChild);
+    }
+
+    function buildUrl() {
+      return (cfg.tls ? "wss" : "ws") + "://" + cfg.host + ":" + cfg.port + (cfg.path ||
+        "/mqtt");
+    }
+
+    function resetSessionView() {
+      temp = 26;
+      modeIndex = 1;
+      speedIndex = 2;
+      powerOn = false;
+      protocolName = "";
+      curTemp = "--";
+      curHumidity = "--";
+      lastDeviceHeartbeat = 0;
+      brokerConnectTime = 0;
+      pendingFw = null;
+      pendingUpdateCheck = false;
+      $("fwVer").textContent = "--";
+      clearOtaUi();
+      $("log").innerHTML = "";
+      renderEnv();
+      renderControls();
+      setDevStatus("检测中…", "busy");
+    }
+
+    function renderEnv() {
+      const pv = protocolName ? (PROTOCOL_CN[protocolName] ? protocolName + " (" + PROTOCOL_CN[protocolName] +
+        ")" : protocolName) : "--";
+      $("env").innerHTML = '<span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" /></svg>室温 <b>' +
+        curTemp + '℃</b></span><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" /></svg>湿度 <b>' +
+        curHumidity + '%</b></span><span class="env-item">协议 <b style="color:#007aff">' + pv + '</b></span>';
+    }
+
+    function renderControls() {
+      $("tempVal").textContent = temp;
+      $("powerSwitch").className = "switch" + (powerOn ? " on" : "");
+      $("powerText").textContent = powerOn ? "开" : "关";
+      document.querySelectorAll("#modeGrid button").forEach((b, i) => b.className = i === modeIndex ? "active" :
+        "");
+      document.querySelectorAll("#speedGrid button").forEach((b, i) => b.className = i === speedIndex ? "active" :
+        "");
+      if (protocolName) $("protocolSel").value = protocolName;
+    }
+
+    function setBtn(id, on) { const el = $(id); if (el) el.classList.toggle("active", !!on); }
+
+    function parseStatus(msg) {
+      if (msg.indexOf("{") === 0) {
+        try {
+          const j = JSON.parse(msg);
+          if (j.degrees !== undefined) temp = Math.round(j.degrees);
+          if (j.temp !== undefined && j.degrees === undefined) temp = Math.round(j.temp);
+          if (j.power !== undefined) powerOn = !!j.power;
+          if (j.mode >= 0 && j.mode < MODES.length) modeIndex = j.mode;
+          if (j.speed >= 0 && j.speed < SPEEDS.length) speedIndex = j.speed;
+          if (j.protocol) protocolName = j.protocol;
+          curTemp = j.temp !== undefined ? Number(j.temp).toFixed(1) : "--";
+          curHumidity = j.humidity !== undefined ? Number(j.humidity).toFixed(1) : "--";
+          renderEnv();
+          if (j.pows) $("pows").textContent = j.pows;
+          if (j.turbo !== undefined) setBtn("fTurbo", j.turbo);
+          if (j.swing !== undefined) setBtn("fSwing", j.swing);
+          if (j.light !== undefined) setBtn("fLight", j.light);
+          if (j.sleep !== undefined) setBtn("fSleep", j.sleep);
+          if (j.clean !== undefined) setBtn("fClean", j.clean);
+          if (j.fw) $("fwVer").textContent = j.fw;
+          if (j.ota === "idle") clearOtaUi();
+          else if (j.ota === "downloading" && !$("otaProgressWrap").style.display) {
+            $("otaStatus").textContent = "正在下载固件…";
+            $("otaStatus").style.color = "var(--warn)";
+          }
+          renderControls();
+        } catch (e) { }
+      } else if (msg.indexOf("temp=") === 0) {
+        const t = msg.match(/temp=([\d.]+)/);
+        if (t) temp = parseInt(t[1]);
+        const m = msg.match(/mode=(\d+)/);
+        if (m && parseInt(m[1]) < MODES.length) modeIndex = parseInt(m[1]);
+        const s = msg.match(/speed=(\d+)/);
+        if (s && parseInt(s[1]) < SPEEDS.length) speedIndex = parseInt(s[1]);
+        const p = msg.match(/power=(on|off)/);
+        if (p) powerOn = p[1] === "on";
+        renderControls();
+      } else if (msg.indexOf("protocol=") === 0) {
+        protocolName = msg.substring(9);
+        renderControls();
+      } else if (msg.indexOf("ota=found") === 0) {
+        const v = msg.substring(10).trim();
+        $("otaConfirmMsg").textContent = "发现新版本 v" + v + "，是否现在更新？";
+        $("otaConfirm").style.display = "block";
+        $("otaStatus").textContent = "";
+      } else if (msg.indexOf("ota=progress") === 0) {
+        const p = parseInt(msg.substring(12));
+        if (!isNaN(p)) {
+          $("otaProgressWrap").style.display = "block";
+          $("otaProgressBar").style.width = p + "%";
+          $("otaProgressText").textContent = "正在下载固件 " + p + "%";
+        }
+      } else if (msg.indexOf("ota=start") === 0) {
+        $("otaStatus").textContent = "正在下载固件…";
+        $("otaStatus").style.color = "var(--warn)";
+      } else if (msg.indexOf("ota=uptodate") === 0) {
+        $("otaStatus").textContent = "已是最新版本 v" + msg.substring(13).trim();
+        $("otaStatus").style.color = "var(--ok)";
+        $("otaConfirm").style.display = "none";
+        setTimeout(function () { $("otaStatus").textContent = ""; }, 8000);
+      } else if (msg.indexOf("ota=ok") === 0) {
+        $("otaStatus").textContent = "固件升级完成，设备重启中…";
+        $("otaStatus").style.color = "var(--ok)";
+        $("otaProgressWrap").style.display = "none";
+        $("otaConfirm").style.display = "none";
+        setTimeout(function () { $("otaStatus").textContent = ""; }, 8000);
+      } else if (msg.indexOf("ota=fail") === 0) {
+        $("otaStatus").textContent = "更新失败: " + msg.substring(9);
+        $("otaStatus").style.color = "var(--err)";
+        $("otaProgressWrap").style.display = "none";
+        $("otaConfirm").style.display = "none";
+        setTimeout(function () { $("otaStatus").textContent = ""; }, 8000);
+      } else if (msg.indexOf("learn=") === 0) {
+        if (msg === "learn=waiting") {
+          $("learnStatus").textContent = "学习中…请按遥控器（10 秒超时）";
+          $("learnStatus").style.color = "var(--warn)";
+        } else if (msg.indexOf("learn=success:") === 0) {
+          const p = msg.substring("learn=success:".length);
+          protocolName = p;
+          $("learnStatus").textContent = "学习成功：" + (PROTOCOL_CN[p] ? PROTOCOL_CN[p] + " (" + p + ")" :
+            p);
+          $("learnStatus").style.color = "var(--ok)";
+          $("protocolSel").value = p;
+          renderControls();
+          clearTimeout(learnClearTimer);
+          learnClearTimer = setTimeout(function () { $("learnStatus").textContent = ""; }, 5000);
+        } else if (msg === "learn=timeout") {
+          $("learnStatus").textContent = "学习超时，未识别到信号，请重试";
+          $("learnStatus").style.color = "var(--err)";
+          clearTimeout(learnClearTimer);
+          learnClearTimer = setTimeout(function () { $("learnStatus").textContent = ""; }, 5000);
+        }
+      }
+    }
+
+    function parseTimerResponse(msg) {
+      if (msg === "wifi_config=ok") { setRecoveryStatus("已进入重新配网模式，请连接设备热点完成配置。", "var(--ok)"); return; }
+      if (msg === "reset=ok") { setRecoveryStatus("已开始恢复出厂设置，设备即将重启。", "var(--ok)"); return; }
+      if (msg.indexOf("timers=") === 0) {
+        try {
+          timerItems = JSON.parse(msg.substring(7));
+          renderTimers();
+          timerStatus("已更新任务列表");
+        } catch (e) { timerStatus("任务列表解析失败", "var(--err)"); }
+      } else if (msg.indexOf("timer_add=success") === 0) {
+        timerStatus("定时任务已添加", "var(--ok)");
+        loadTimers();
+      } else if (msg.indexOf("timer_update=success") === 0) {
+        timerStatus("定时任务已更新",
+          "var(--ok)");
+        loadTimers();
+      } else if (msg.indexOf("timer_delete=success") === 0) {
+        timerStatus("定时任务已删除",
+          "var(--ok)");
+        loadTimers();
+      } else if (msg.indexOf("timer_enable=success") === 0) {
+        timerStatus("任务状态已更新",
+          "var(--ok)");
+        loadTimers();
+      } else if (msg.indexOf("timer_") === 0) { timerStatus("操作失败，请重试", "var(--err)"); }
+    }
+
+    function setRecoveryStatus(text, color) {
+      const el = $("recoveryStatus"); if (el) {
+        el.textContent = text || "";
+        el.style.color = color || "var(--muted)";
+      }
+    }
+
+    function reconfigureDevice() {
+      if (!client || !client.connected) { setRecoveryStatus("请先连接 MQTT", "var(--warn)"); return; }
+      if (!confirm("将清除当前 Wi‑Fi 配置并打开配网热点，是否继续？")) return;
+      setRecoveryStatus("正在请求重新配网…", "var(--warn)");
+      send("wifi_config");
+    }
+
+    function resetFactoryFromPage() {
+      if (!client || !client.connected) { setRecoveryStatus("请先连接 MQTT", "var(--warn)"); return; }
+      if (!confirm("恢复出厂设置会清除 Wi‑Fi、HomeKit 配对、定时任务和协议配置，并重启设备。确定继续吗？")) return;
+      setRecoveryStatus("正在请求恢复出厂设置…", "var(--warn)");
+      send("reset_factory");
+    }
+
+    // ============================================================
+    //  OTA / 固件更新
+    // ============================================================
+    function clearOtaUi(message) {
+      clearTimeout(otaHideTimer);
+      otaCompletedUntil = 0;
+      hideOtaProgress();
+      $("otaConfirm").style.display = "none";
+      if (message !== undefined) {
+        $("otaStatus").textContent = message;
+        $("otaStatus").style.color = "var(--muted)";
+      } else {
+        $("otaStatus").textContent = "";
+      }
+    }
+
+    function hideOtaProgress() {
+      $("otaProgressWrap").style.display = "none";
+      $("otaProgressBar").style.width = "0%";
+      $("otaProgressText").textContent = "";
+    }
+
+    function checkUpdateUI() {
+      hideOtaProgress();
+      checkUpdate();
+    }
+
+    function verCmp(a, b) {
+      const p = String(a).split(".").map(Number),
+        q = String(b).split(".").map(Number);
+      for (let i = 0; i < Math.max(p.length, q.length); i++) {
+        const x = p[i] || 0,
+        y = q[i] || 0; if (x !== y) return x - y;
+      }
+      return 0;
+    }
+
+    function checkUpdate() {
+      if (!client || !client.connected) {
+        pendingUpdateCheck = true;
+        $("otaStatus").textContent = "网页 MQTT 已断开，正在重连…";
+        $("otaStatus").style.color = "var(--warn)";
+        connect();
+        return;
+      }
+      pendingUpdateCheck = false;
+      $("otaStatus").textContent = "正在检查更新…";
+      $("otaStatus").style.color = "var(--warn)";
+      $("otaConfirm").style.display = "none";
+      const esp8266 = cfg.devType === "esp8266";
+      const metaUrl = esp8266 ?
+        "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP8266-AC-HomeKit@master/firmware/esp8266/ota.json" :
+        "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/ota.json";
+      fetch(metaUrl, { cache: "no-store" }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (m) {
+        if (!m || !m.version || !m.url) throw new Error("清单缺少 version 或 url");
+        pendingFw = { ver: String(m.version), url: String(m.url) };
+        if (esp8266) {
+          send("ota=seturl " + pendingFw.url);
+          const cur = ($("fwVer").textContent || "").trim();
+          if (cur && verCmp(pendingFw.ver, cur) > 0) {
+            $("otaConfirmMsg").textContent = "发现新版本 v" + pendingFw.ver + "，是否现在更新？";
+            $("otaConfirm").style.display = "block";
+            $("otaStatus").textContent = "";
+          } else {
+            $("otaStatus").textContent = "已是最新版本 v" + cur;
+            $("otaStatus").style.color = "var(--ok)";
+            $("otaConfirm").style.display = "none";
+            setTimeout(function () { $("otaStatus").textContent = ""; }, 8000);
+          }
+        } else {
+          send("ota=seturl " + pendingFw.url);
+          send("ota=check");
+        }
+      }).catch(function (e) {
+        $("otaStatus").textContent = "读取升级清单失败: " + e.message;
+        $("otaStatus").style.color = "var(--err)";
+      });
+    }
+
+    function confirmUpdate() {
+      $("otaConfirm").style.display = "none";
+      send("ota=go");
+    }
+
+    // ============================================================
+    //  发送指令（增加主题合法性校验）
+    // ============================================================
+    function send(cmd) {
+      if (!client || !client.connected) {
+        $("otaStatus").textContent = "网页 MQTT 已断开，请重新连接";
+        $("otaStatus").style.color = "var(--err)";
+        return false;
+      }
+      const topic = cfg.topic;
+      if (!topic || topic.indexOf('xxxx') !== -1 || topic.length < 5) {
+        $("otaStatus").textContent = "请先在连接配置中填写正确的设备主题";
+        $("otaStatus").style.color = "var(--err)";
+        return false;
+      }
+      const fullTopic = topic + "/in";
+      client.publish(fullTopic, cmd);
+      log(fullTopic + " : " + cmd);
+      return true;
+    }
+
+    // ============================================================
+    //  控件交互
+    // ============================================================
+    function startLearn() {
+      clearTimeout(learnClearTimer);
+      $("learnStatus").textContent = "学习中…请按遥控器（10 秒超时）";
+      $("learnStatus").style.color = "var(--warn)";
+      learnClearTimer = setTimeout(function () { $("learnStatus").textContent = ""; }, 15000);
+      send("learn=start");
+    }
+
+    function featToggle(id, cmd) {
+      const el = $(id); if (el) el.classList.toggle("active");
+      send(cmd);
+    }
+
+    function togglePower() {
+      powerOn = !powerOn;
+      renderControls();
+      send(powerOn ? "temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on" :
+        "power=off");
+    }
+
+    function tempStep(d) {
+      temp = Math.min(30, Math.max(16, temp + d));
+      renderControls();
+      send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on");
+    }
+
+    // 点击温度数字编辑
     const tempWrap = $("tempValWrap");
     const tempSpan = $("tempVal");
     tempWrap.onclick = function (e) {
@@ -747,7 +1719,8 @@
       const input = document.createElement("input");
       input.className = "temp-val-input";
       input.type = "number";
-      input.min = 16; input.max = 30;
+      input.min = 16;
+      input.max = 30;
       input.value = temp;
       tempSpan.style.display = "none";
       tempWrap.insertBefore(input, tempSpan);
@@ -767,99 +1740,155 @@
       input.onkeydown = (ev) => { if (ev.key === 'Enter') finishEdit(); };
     };
 
-    function topicHistory() { try { const h = JSON.parse(localStorage.getItem("mqtt_topic_history") || "[]"); return Array.isArray(h) ? h : []; } catch (e) { return []; } }
-    function renderTopicHistory() { const list = $("topicHistory"); if (!list) return; list.innerHTML = ""; topicHistory().forEach(function (item) { const o = document.createElement("option"); o.value = item.topic; o.label = item.topic + " · " + (item.devType === "esp8266" ? "ESP8266" : "ESP32"); list.appendChild(o); }); }
-    function rememberTopic() { const topic = $("topic").value.trim(); if (!topic) return; let h = topicHistory().filter(function (x) { return x.topic !== topic; }); h.unshift({ topic: topic, devType: $("devType").value, host: cfg.host, port: cfg.port, path: cfg.path, tls: cfg.tls }); localStorage.setItem("mqtt_topic_history", JSON.stringify(h.slice(0, 30))); renderTopicHistory(); }
-    function selectHistoryTopic() { const topic = $("topic").value.trim(); const x = topicHistory().find(function (item) { return item.topic === topic; }); if (!x) return; $("devType").value = x.devType || "esp32"; if (x.host) { $("host").value = x.host; cfg.host = x.host; } if (x.port) { $("port").value = x.port; cfg.port = x.port; } if (x.path) { $("path").value = x.path; cfg.path = x.path; } if (typeof x.tls === "boolean") { cfg.tls = x.tls; $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : ""); } applyDevType(); saveCfg(); }
-    function loadCfg() { try { Object.assign(cfg, JSON.parse(localStorage.getItem("mqtt_cfg_web") || "{}")); } catch (e) { } $("host").value = cfg.host; $("port").value = cfg.port; $("path").value = cfg.path; $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : ""); $("username").value = cfg.username; $("password").value = cfg.password; $("topic").value = cfg.topic; $("devType").value = cfg.devType || "esp32"; applyDevType(); $("pubTopic").value = cfg.topic + "/in"; renderTopicHistory(); }
-    function saveCfg() { cfg.host = $("host").value.trim() || "broker-cn.emqx.io"; cfg.port = parseInt($("port").value) || 8084; cfg.path = $("path").value.trim() || "/mqtt"; cfg.username = $("username").value.trim(); cfg.password = $("password").value; cfg.topic = $("topic").value.trim() || (($("devType").value === "esp8266") ? "ac/esp8266acxxxx" : "ac/esp32acxxxx"); cfg.devType = $("devType").value; localStorage.setItem("mqtt_cfg_web", JSON.stringify(cfg)); $("pubTopic").value = cfg.topic + "/in"; }
-    function toggleTls() { cfg.tls = !cfg.tls; $("tlsSwitch").className = "switch" + (cfg.tls ? " on" : ""); saveCfg(); }
-    function applyDevType() {const t = $("devType").value;const p = (t === "esp8266") ? "ac/esp8266ac" : "ac/esp32ac";let cur = $("topic").value.trim();let suffix = "";if (cur.indexOf("ac/esp32ac") === 0) suffix = cur.substring("ac/esp32ac".length);else if (cur.indexOf("ac/esp8266ac") === 0) suffix = cur.substring("ac/esp8266ac".length);$("topic").value = p + suffix;$("topic").placeholder = p + "xxxx";}    $("devType").onchange = function () { applyDevType(); saveCfg(); };
-    function setStatus(text, cls) { const s = $("status"); s.textContent = text; s.className = "pill " + cls; }
-    function setDevStatus(text, cls) { const s = $("devStatus"); s.textContent = text; s.className = "pill " + cls; }
-    const DEVICE_STATUS_TOPIC = () => cfg.topic + "/status";
-    const DEVICE_OUT_TOPIC = () => cfg.topic + "/out";
-    const DEVICE_TIMEOUT_MS = 15000; // 固件每 10 秒发一次 status，15 秒超时留 5 秒余量
+    // ============================================================
+    //  MQTT 连接 / 断开
+    // ============================================================
+    function connect() {
+      saveCfg();
+      rememberTopic();
+      resetSessionView();
+      if (client) { try { client.end(true); } catch (e) { } }
+      setStatus("连接中…", "busy");
+      log("连接 " + buildUrl());
+      client = mqtt.connect(buildUrl(), {
+        username: cfg.username || undefined,
+        password: cfg.password || undefined,
+        clientId: "web_mqtt_" + Math.random().toString(16).slice(2, 10),
+        reconnectPeriod: 5000,
+        connectTimeout: 10000,
+        keepalive: 30
+      });
+      client.on("connect", () => {
+        isConnected = true;
+        updateControlsEnabled(true);
+        setStatus("已连接", "on");
+        lastDeviceHeartbeat = 0;
+        brokerConnectTime = Date.now();
+        setDevStatus("检测中…", "busy");
+        log("已连接");
+        // 保存自动重连标志（同时用于控制配置展开状态）
+        localStorage.setItem('mqtt_auto_connect', 'true');
+        client.subscribe(DEVICE_STATUS_TOPIC(), { qos: 0 });
+        client.subscribe(DEVICE_OUT_TOPIC(), { qos: 0 });
+        setTimeout(syncDeviceTime, 250);
+        setTimeout(loadTimers, 450);
+        if (pendingUpdateCheck) setTimeout(checkUpdate, 300);
+      });
+      client.on("message", (topic, payload) => {
+        const msg = payload.toString();
+        log(topic + " : " + msg, true);
+        if (topic === DEVICE_STATUS_TOPIC()) { onDeviceStatus(msg); }
+        parseTimerResponse(msg);
+        parseStatus(msg);
+      });
+      client.on("close", () => {
+        isConnected = false;
+        updateControlsEnabled(false);
+        setStatus("未连接", "off");
+        setDeviceOnline(false);
+        log("连接已断开");
+      });
+      client.on("error", e => {
+        isConnected = false;
+        updateControlsEnabled(false);
+        setStatus("错误", "off");
+        log("错误: " + ((e && e.message) || e));
+      });
+    }
 
-    let lastDeviceHeartbeat = 0;
-    let brokerConnectTime = 0;
+    function disconnect() {
+      if (client) { try { client.end(true); } catch (e) { } client = null; }
+      isConnected = false;
+      updateControlsEnabled(false);
+      setStatus("未连接", "off");
+      setDeviceOnline(false);
+      // 清除自动重连标志，下次不会自动连接，且配置会重新展开
+      localStorage.removeItem('mqtt_auto_connect');
+      // 同时折叠配置（用户断开后，下次打开可重新配置）
+      $('connectDetails').removeAttribute('open');
+    }
 
-    function clearOtaUi(message) {
-      $("otaConfirm").style.display = "none";
-      $("otaProgressWrap").style.display = "none";
-      $("otaProgressBar").style.width = "0%";
-      $("otaProgressText").textContent = "";
-      if (message !== undefined) {
-        $("otaStatus").textContent = message;
-        $("otaStatus").style.color = "var(--muted)";
+    // ============================================================
+    //  页面初始化：根据标志控制配置展开状态
+    // ============================================================
+    function initConnectDetails() {
+      const details = $('connectDetails');
+      if (!details) return;
+      const hasConnected = localStorage.getItem('mqtt_auto_connect') === 'true';
+      if (hasConnected) {
+        details.removeAttribute('open'); // 曾经连接过，折叠
       } else {
-        $("otaStatus").textContent = "";
+        details.setAttribute('open', 'open'); // 从未连接，展开
       }
     }
-    function setDeviceOnline(online) {
-      setDevStatus(online ? "设备在线" : "设备离线", online ? "on" : "off");
-      if (!online) clearOtaUi("设备离线，已取消更新状态");
-    }
 
-    function onDeviceStatus(msg) {
-      try {
-        const j = JSON.parse(msg);
-        if (typeof j.online === "boolean") {
-          if (j.online) {
-            lastDeviceHeartbeat = Date.now();
-            setDeviceOnline(true);
-          } else {
-            setDeviceOnline(false); // LWT / retained 明确离线
-          }
-          return;
+    // ============================================================
+    //  自动重连（仅在标志存在时尝试）
+    // ============================================================
+    function autoConnectIfNeeded() {
+      if (localStorage.getItem('mqtt_auto_connect') === 'true') {
+        if (!client || !client.connected) {
+          connect();
         }
-      } catch (e) {}
-
-      // 兼容没带 online 字段的旧固件：收到 status 本身也算一次心跳
-      lastDeviceHeartbeat = Date.now();
-      setDeviceOnline(true);
-    }
-
-    function checkDevicePresence() {
-      if (!client || !client.connected) {
-        setDeviceOnline(false);
-        return;
-      }
-
-      const now = Date.now();
-
-      if (lastDeviceHeartbeat && now - lastDeviceHeartbeat > DEVICE_TIMEOUT_MS) {
-        setDeviceOnline(false);
-      }
-
-      if (!lastDeviceHeartbeat && brokerConnectTime && now - brokerConnectTime > DEVICE_TIMEOUT_MS) {
-        setDeviceOnline(false);
       }
     }
 
-    setInterval(checkDevicePresence, 5000);
-    function log(msg, incoming) { const p = document.createElement("p"); if (incoming) p.className = "in"; const now = new Date().toTimeString().slice(0, 8); const t = document.createElement("span"); t.className = "t"; t.textContent = now; p.appendChild(t); p.appendChild(document.createTextNode(msg)); const box = $("log"); box.insertBefore(p, box.firstChild); while (box.children.length > 100) box.removeChild(box.lastChild); }
-    function buildUrl() { return (cfg.tls ? "wss" : "ws") + "://" + cfg.host + ":" + cfg.port + (cfg.path || "/mqtt"); }
-    function renderEnv() { const pv = protocolName ? (PROTOCOL_CN[protocolName] ? protocolName + " (" + PROTOCOL_CN[protocolName] + ")" : protocolName) : "--"; $("env").innerHTML = '<span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" /></svg>室温 <b>' + curTemp + '℃</b></span><span class="env-item"><svg viewBox="0 0 24 24" fill="none" stroke="#5ac8fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" /></svg>湿度 <b>' + curHumidity + '%</b></span><span class="env-item">协议 <b style="color:#007aff">' + pv + '</b></span>'; }
-    function resetSessionView() { temp = 26; modeIndex = 1; speedIndex = 2; powerOn = false; protocolName = ""; curTemp = "--"; curHumidity = "--"; lastDeviceHeartbeat = 0; brokerConnectTime = 0; pendingFw = null; pendingUpdateCheck = false; $("fwVer").textContent = "--"; clearOtaUi(); $("log").innerHTML = ""; renderEnv(); renderControls(); setDevStatus("检测中…", "busy"); }
-    function renderControls() { $("tempVal").textContent = temp; $("powerSwitch").className = "switch" + (powerOn ? " on" : ""); $("powerText").textContent = powerOn ? "开" : "关"; document.querySelectorAll("#modeGrid button").forEach((b, i) => b.className = i === modeIndex ? "active" : ""); document.querySelectorAll("#speedGrid button").forEach((b, i) => b.className = i === speedIndex ? "active" : ""); if (protocolName) $("protocolSel").value = protocolName; }
-    function parseStatus(msg) { if (msg.indexOf("{") === 0) { try { const j = JSON.parse(msg); if (j.degrees !== undefined) temp = Math.round(j.degrees); if (j.temp !== undefined && j.degrees === undefined) temp = Math.round(j.temp); if (j.power !== undefined) powerOn = !!j.power; if (j.mode >= 0 && j.mode < MODES.length) modeIndex = j.mode; if (j.speed >= 0 && j.speed < SPEEDS.length) speedIndex = j.speed; if (j.protocol) protocolName = j.protocol; curTemp = j.temp !== undefined ? Number(j.temp).toFixed(1) : "--"; curHumidity = j.humidity !== undefined ? Number(j.humidity).toFixed(1) : "--"; renderEnv(); if (j.pows) $("pows").textContent = j.pows; if (j.turbo !== undefined) setBtn("fTurbo", j.turbo); if (j.swing !== undefined) setBtn("fSwing", j.swing); if (j.light !== undefined) setBtn("fLight", j.light); if (j.sleep !== undefined) setBtn("fSleep", j.sleep); if (j.clean !== undefined) setBtn("fClean", j.clean); if (j.fw) $("fwVer").textContent = j.fw; if (j.ota === "idle") clearOtaUi(); else if (j.ota === "downloading" && !$("otaProgressWrap").style.display) { $("otaStatus").textContent = "正在下载固件…"; $("otaStatus").style.color = "var(--warn)"; } renderControls(); } catch (e) { } } else if (msg.indexOf("temp=") === 0) { const t = msg.match(/temp=([\d.]+)/); if (t) temp = parseInt(t[1]); const m = msg.match(/mode=(\d+)/); if (m && parseInt(m[1]) < MODES.length) modeIndex = parseInt(m[1]); const s = msg.match(/speed=(\d+)/); if (s && parseInt(s[1]) < SPEEDS.length) speedIndex = parseInt(s[1]); const p = msg.match(/power=(on|off)/); if (p) powerOn = p[1] === "on"; renderControls(); } else if (msg.indexOf("protocol=") === 0) { protocolName = msg.substring(9); renderControls(); } else if (msg.indexOf("ota=found") === 0) { const v = msg.substring(10).trim(); $("otaConfirmMsg").textContent = "发现新版本 v" + v + "，是否现在更新？"; $("otaConfirm").style.display = "block"; $("otaStatus").textContent = ""; } else if (msg.indexOf("ota=ack ") === 0) { if (otaTransfer) otaTransfer.ack(parseInt(msg.substring(8))); } else if (msg.indexOf("ota=progress") === 0) { const p = parseInt(msg.substring(12)); if (!isNaN(p)) { $("otaProgressWrap").style.display = "block"; $("otaProgressBar").style.width = p + "%"; $("otaProgressText").textContent = "正在下载固件 " + p + "%"; } } else if (msg.indexOf("ota=start") === 0) { $("otaStatus").textContent = "正在下载固件…"; $("otaStatus").style.color = "var(--warn)"; } else if (msg.indexOf("ota=uptodate") === 0) { $("otaStatus").textContent = "已是最新版本 v" + msg.substring(13).trim(); $("otaStatus").style.color = "var(--ok)"; $("otaConfirm").style.display = "none"; setTimeout(function(){ $("otaStatus").textContent = ""; }, 8000); } else if (msg.indexOf("ota=ok") === 0) { $("otaStatus").textContent = "固件升级完成，设备重启中…"; $("otaStatus").style.color = "var(--ok)"; $("otaProgressWrap").style.display = "none"; $("otaConfirm").style.display = "none"; setTimeout(function(){ $("otaStatus").textContent = ""; }, 8000); } else if (msg.indexOf("ota=fail") === 0) { $("otaStatus").textContent = "更新失败: " + msg.substring(9); $("otaStatus").style.color = "var(--err)"; $("otaProgressWrap").style.display = "none"; $("otaConfirm").style.display = "none"; setTimeout(function(){ $("otaStatus").textContent = ""; }, 8000); } else if (msg.indexOf("learn=") === 0) { if (msg === "learn=waiting") { $("learnStatus").textContent = "学习中…请按遥控器（10 秒超时）"; $("learnStatus").style.color = "var(--warn)"; } else if (msg.indexOf("learn=success:") === 0) { const p = msg.substring("learn=success:".length); protocolName = p; $("learnStatus").textContent = "学习成功：" + (PROTOCOL_CN[p] ? PROTOCOL_CN[p] + " (" + p + ")" : p); $("learnStatus").style.color = "var(--ok)"; $("protocolSel").value = p; renderControls(); clearTimeout(learnClearTimer); learnClearTimer = setTimeout(function(){ $("learnStatus").textContent = ""; }, 5000); } else if (msg === "learn=timeout") { $("learnStatus").textContent = "学习超时，未识别到信号，请重试"; $("learnStatus").style.color = "var(--err)"; clearTimeout(learnClearTimer); learnClearTimer = setTimeout(function(){ $("learnStatus").textContent = ""; }, 5000); } } }
-    let pendingFw = null; let pendingUpdateCheck = false; function checkUpdate() { if (!client || !client.connected) { pendingUpdateCheck = true; $("otaStatus").textContent = "网页 MQTT 已断开，正在重连…"; $("otaStatus").style.color = "var(--warn)"; connect(); return; } pendingUpdateCheck = false; $("otaStatus").textContent = "正在检查更新…"; $("otaStatus").style.color = "var(--warn)"; $("otaConfirm").style.display = "none"; const esp8266 = cfg.devType === "esp8266"; const metaUrl = "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master/firmware/" + (esp8266 ? "esp8266/" : "") + "ota.json"; fetch(metaUrl, { cache: "no-store" }).then(function(r){ if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function(m){ if (!m || !m.version || !m.url) throw new Error("清单缺少 version 或 url"); pendingFw = { ver: String(m.version), url: String(m.url) }; if (esp8266) send("ota=check " + pendingFw.ver + " " + pendingFw.url); else { send("ota=seturl " + pendingFw.url); send("ota=check"); } }).catch(function(e){ $("otaStatus").textContent = "读取升级清单失败: " + e.message; $("otaStatus").style.color = "var(--err)"; }); } function sendBinary(prefix, data) { if (!client || !client.connected) { $("otaStatus").textContent = "网页 MQTT 已断开，请重新连接"; $("otaStatus").style.color = "var(--err)"; return false; } const topic = cfg.topic + "/in"; const p = new Uint8Array(prefix.length + data.length); for (let i = 0; i < prefix.length; i++) p[i] = prefix.charCodeAt(i); p.set(data, prefix.length); client.publish(topic, p); log(topic + " : " + prefix + "[" + data.length + "B]"); return true; } async function confirmUpdate() { $("otaConfirm").style.display = "none"; if (cfg.devType === "esp8266" && pendingFw && pendingFw.url) { try { const resp = await fetch(pendingFw.url, { cache: "no-store" }); if (!resp.ok) throw new Error("HTTP " + resp.status); const buf = new Uint8Array(await resp.arrayBuffer()); send("ota=start " + buf.length); const CHUNK = 512; for (let i = 0; i < buf.length; i += CHUNK) { if (!sendBinary("ota=chunk " + (i / CHUNK) + " ", buf.subarray(i, Math.min(i + CHUNK, buf.length)))) throw new Error("网页 MQTT 连接已断开"); await new Promise(function(res){ setTimeout(res, 120); }); } send("ota=end"); } catch (e) { $("otaStatus").textContent = "固件下载失败: " + e.message; $("otaStatus").style.color = "var(--err)"; } } else { send("ota=go"); } } function send(cmd) { if (!client || !client.connected) { $("otaStatus").textContent = "网页 MQTT 已断开，请重新连接"; $("otaStatus").style.color = "var(--err)"; return false; } const topic = cfg.topic + "/in"; client.publish(topic, cmd); log(topic + " : " + cmd); return true; }
-    let learnClearTimer = 0; function startLearn() { clearTimeout(learnClearTimer); $("learnStatus").textContent = "学习中…请按遥控器（10 秒超时）"; $("learnStatus").style.color = "var(--warn)"; learnClearTimer = setTimeout(function(){ $("learnStatus").textContent = ""; }, 15000); send("learn=start"); }
-    function featToggle(id, cmd) { const el = $(id); if (el) el.classList.toggle("active"); send(cmd); }
-    function setBtn(id, on) { const el = $(id); if (el) el.classList.toggle("active", !!on); }
-    function connect() { saveCfg(); rememberTopic(); resetSessionView(); if (client) { try { client.end(true); } catch (e) { } } setStatus("连接中…", "busy"); log("连接 " + buildUrl()); client = mqtt.connect(buildUrl(), { username: cfg.username || undefined, password: cfg.password || undefined, clientId: "web_mqtt_" + Math.random().toString(16).slice(2, 10), reconnectPeriod: 5000, connectTimeout: 10000, keepalive: 30 }); client.on("connect", () => { setStatus("已连接", "on"); lastDeviceHeartbeat = 0; brokerConnectTime = Date.now(); setDevStatus("检测中…", "busy"); log("已连接"); client.subscribe(DEVICE_STATUS_TOPIC(), { qos: 0 }); client.subscribe(DEVICE_OUT_TOPIC(), { qos: 0 }); if (pendingUpdateCheck) setTimeout(checkUpdate, 300); }); client.on("message", (topic, payload) => { const msg = payload.toString(); log(topic + " : " + msg, true); if (topic === DEVICE_STATUS_TOPIC()) { onDeviceStatus(msg); } parseStatus(msg); }); client.on("close", () => { setStatus("未连接", "off"); setDeviceOnline(false); log("连接已断开"); }); client.on("error", e => { setStatus("错误", "off"); log("错误: " + ((e && e.message) || e)); }); }
-    function disconnect() { if (client) { try { client.end(true); } catch (e) { } client = null; } setStatus("未连接", "off"); setDeviceOnline(false); }
-    function togglePower() { powerOn = !powerOn; renderControls(); send(powerOn ? "temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on" : "power=off"); }
-    function tempStep(d) { temp = Math.min(30, Math.max(16, temp + d)); renderControls(); send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + speedIndex + ";power=on"); }
-    function pubSend() { if (!client || !client.connected) { alert("请先连接"); return; } const topic = $("pubTopic").value.trim() || (cfg.topic + "/in"); client.publish(topic, $("pubPayload").value); log(topic + " : " + $("pubPayload").value); }
-    function quickPlug(v) { $("pubPayload").value = '{"m":"on","v":"' + v + '"}'; pubSend(); }
-    MODES.forEach((m, i) => { const b = document.createElement("button"); b.textContent = m; b.onclick = () => { modeIndex = i; renderControls(); send("temp=" + temp + ";mode=" + i + ";speed=" + speedIndex + ";power=on"); }; $("modeGrid").appendChild(b); });
-    SPEEDS.forEach((s, i) => { const b = document.createElement("button"); b.textContent = s; b.onclick = () => { speedIndex = i; renderControls(); send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + i + ";power=on"); }; $("speedGrid").appendChild(b); });
-    PROTOCOLS.forEach(p => { const o = document.createElement("option"); o.value = p; o.textContent = PROTOCOL_CN[p] ? PROTOCOL_CN[p] + " (" + p + ")" : p; $("protocolSel").appendChild(o); });
-    $("protocolSel").onchange = () => { const v = $("protocolSel").value; if (!v) return; protocolName = v; renderEnv(); send("protocol=" + v); };
-    $("btnConnect").onclick = connect; $("btnDisconnect").onclick = disconnect; $("topic").onchange = selectHistoryTopic;
-    loadCfg(); renderControls();
+    // ============================================================
+    //  初始化 UI
+    // ============================================================
+    MODES.forEach((m, i) => {
+      const b = document.createElement("button");
+      b.textContent = m;
+      b.onclick = () => {
+        modeIndex = i;
+        renderControls();
+        send("temp=" + temp + ";mode=" + i + ";speed=" + speedIndex + ";power=on");
+      };
+      b.className = "control-action";
+      $("modeGrid").appendChild(b);
+    });
+    SPEEDS.forEach((s, i) => {
+      const b = document.createElement("button");
+      b.textContent = s;
+      b.onclick = () => {
+        speedIndex = i;
+        renderControls();
+        send("temp=" + temp + ";mode=" + modeIndex + ";speed=" + i + ";power=on");
+      };
+      b.className = "control-action";
+      $("speedGrid").appendChild(b);
+    });
+    PROTOCOLS.forEach(p => {
+      const o = document.createElement("option");
+      o.value = p;
+      o.textContent = PROTOCOL_CN[p] ? PROTOCOL_CN[p] + " (" + p + ")" : p;
+      $("protocolSel").appendChild(o);
+    });
+    $("protocolSel").onchange = () => {
+      const v = $("protocolSel").value;
+      if (!v) return;
+      protocolName = v;
+      renderEnv();
+      send("protocol=" + v);
+    };
+
+    $("btnConnect").onclick = connect;
+    $("btnDisconnect").onclick = disconnect;
+    $("topic").onchange = selectHistoryTopic;
+
+    // ============================================================
+    //  加载完成
+    // ============================================================
+    loadCfg();
+    renderControls();
+    renderEnv();
+    updateControlsEnabled(false); // 初始禁用
+
+    // 先控制配置展开状态
+    initConnectDetails();
+
+    // 再尝试自动重连（若标志存在）
+    autoConnectIfNeeded();
   </script>
 </body>
 

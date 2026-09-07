@@ -11,9 +11,6 @@
 #include <homespan.h>
 #include <IRremoteESP8266.h>
 #include <IRac.h>
-#include <ArduinoOTA.h>
-#include <Update.h>
-#include <HTTPUpdate.h>
 
 extern float envTemperature;
 extern float enHumidity;
@@ -34,7 +31,7 @@ static String jsonEscape(String value)
     return value;
 }
 
-WifiManagerEx::WifiManagerEx() : server(8080) {}
+WifiManagerEx::WifiManagerEx() = default;
 
 void WifiManagerEx::begin()
 {
@@ -43,6 +40,9 @@ void WifiManagerEx::begin()
     WiFi.persistent(true);
     // 关闭省电睡眠，减少部分路由器下的丢包、断线和恢复失败。
     WiFi.setSleep(false);
+    Serial.printf("[WiFi-DIAG] STA MAC=%s AP MAC=%s mode=%d status=%d\n",
+                  WiFi.macAddress().c_str(), WiFi.softAPmacAddress().c_str(),
+                  (int)WiFi.getMode(), (int)WiFi.status());
     setupConfigPortalHandlers();
 }
 
@@ -50,14 +50,12 @@ void WifiManagerEx::enable()
 {
     radioEnabled = true;
     connectWiFi();
-    startWebServer();
 }
 
 void WifiManagerEx::disable()
 {
     radioEnabled = false;
     stopConfigPortal();
-    stopWebServer();
     disconnectWiFi();
 }
 
@@ -66,17 +64,11 @@ void WifiManagerEx::loop()
     if (!radioEnabled)
         return;
 
-    if (webServerActive)
-        server.handleClient();
-
     if (configPortalActive)
     {
         dnsServer.processNextRequest();
         configServer.handleClient();
     }
-
-    if (otaReady)
-        ArduinoOTA.handle();
 
     checkWiFiConnection();
 }
@@ -122,42 +114,60 @@ void WifiManagerEx::beginStaConnect()
 
     if (hasCredentials)
     {
+        staConnectInProgress = true;
         Serial.printf("[WiFi] 尝试连接 %s (第 %u 次)\n", ssid.c_str(), retryCount);
         WiFi.begin(ssid.c_str(), pass.c_str());
     }
     else if (pendingSsid.length() > 0)
     {
+        staConnectInProgress = true;
         Serial.printf("[WiFi] 尝试连接配网页提交的 %s\n", pendingSsid.c_str());
         WiFi.begin(pendingSsid.c_str(), pendingPass.c_str());
     }
     else
     {
-        // 兼容旧固件：凭据可能只在 NVS 里，WiFi.begin() 无参能自动读取
-        Serial.println("[WiFi] 无 SPIFFS 凭据，尝试 NVS 中的旧凭据");
-        WiFi.begin();
+        // 没有凭据时保持在配网门户，不要调用无参 WiFi.begin() 重试旧的 NVS 凭据。
+        // 否则“重新配网”后设备可能又连回旧路由器并自动关闭门户。
+        staConnectInProgress = false;
+        Serial.println("[WiFi] 当前没有 WiFi 凭据，等待配网页提交");
     }
 }
 
-void WifiManagerEx::connectWiFi()
-{
+// void WifiManagerEx::connectWiFi()
+// {
+//     String ssid, pass;
+//     hasCredentials = loadWifiCredentials(ssid, pass);
+
+//     retryCount = 0;
+//     staDownSince = millis();
+//     ledManager.blinkGreen();
+
+//     if (!hasCredentials)
+//     {
+//         // 完全没配过：直接开热点等配网，不用白等重连超时
+//         Serial.println("[WiFi] 未配置 WiFi，直接开启配网热点");
+//         startConfigPortal();
+//         return;
+//     }
+
+//     beginStaConnect();
+// }
+void WifiManagerEx::connectWiFi() {
     String ssid, pass;
     hasCredentials = loadWifiCredentials(ssid, pass);
+
 
     retryCount = 0;
     staDownSince = millis();
     ledManager.blinkGreen();
 
-    if (!hasCredentials)
-    {
-        // 完全没配过：直接开热点等配网，不用白等重连超时
+    if (!hasCredentials) {
         Serial.println("[WiFi] 未配置 WiFi，直接开启配网热点");
         startConfigPortal();
         return;
     }
-
     beginStaConnect();
 }
-
 void WifiManagerEx::syncHomeSpanWifi()
 {
     String ssid = WiFi.SSID();
@@ -175,6 +185,7 @@ void WifiManagerEx::disconnectWiFi()
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
     wifiConnected = false;
+    staConnectInProgress = false;
     retryCount = 0;
     Serial.println("WiFi已关闭");
 }
@@ -182,6 +193,10 @@ void WifiManagerEx::disconnectWiFi()
 void WifiManagerEx::checkWiFiConnection()
 {
     unsigned long now = millis();
+
+    // 扫描期间暂停 STA，避免单射频下扫描被拒绝。
+    if (staPausedForScan)
+        return;
     bool linkUp = (WiFi.status() == WL_CONNECTED);
 
     if (linkUp)
@@ -189,12 +204,13 @@ void WifiManagerEx::checkWiFiConnection()
         if (!wifiConnected)
         {
             wifiConnected = true;
+            staConnectInProgress = false;
             retryCount = 0;
             staDownSince = 0;
             syncHomeSpanWifi();
             ledManager.stopBlink();
             ledManager.off(); // WiFi 已连接 = 熄灭
-            Serial.printf("[WiFi] 已连接！IP: %s:8080\n", WiFi.localIP().toString().c_str());
+            Serial.printf("[WiFi] 已连接！IP: %s\n", WiFi.localIP().toString().c_str());
             timerManager.syncTime();
 
             // 连上就关掉配网热点：AP_STA 长期共存会拖累 STA，
@@ -216,6 +232,8 @@ void WifiManagerEx::checkWiFiConnection()
         wifiConnected = false;
         retryCount = 0;
         staDownSince = now;
+
+        staConnectInProgress = false;
         Serial.println("[WiFi] 连接已断开，开始退避重连");
     }
     if (staDownSince == 0)
@@ -231,8 +249,9 @@ void WifiManagerEx::checkWiFiConnection()
         startConfigPortal();
     }
 
-    // 无论热点是否开着，STA 都按退避节奏继续重试
-    if (now - lastStaAttemptTime >= currentBackoff())
+    // 配网门户开启期间降低重试频率，避免反复抢占射频影响手机访问。
+    unsigned long backoff = configPortalActive ? 60000UL : currentBackoff();
+    if (now - lastStaAttemptTime >= backoff)
         beginStaConnect();
 }
 
@@ -245,11 +264,30 @@ void WifiManagerEx::startAccessPoint()
     if (WiFi.getMode() != WIFI_AP_STA)
         WiFi.mode(WIFI_AP_STA);
 
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
+                      IPAddress(255, 255, 255, 0));
+
     // 开放热点（无密码）。channel 跟随 STA 会更稳，但未连接时用 1。
     bool ok = WiFi.softAP(apName.c_str());
-    Serial.printf("[AP] softAP(%s) result=%d mode=%d ip=%s\n",
+    Serial.printf("[AP] softAP(%s) result=%d mode=%d ip=%s ssid=%s mac=%s clients=%d\n",
                   apName.c_str(), ok ? 1 : 0, (int)WiFi.getMode(),
-                  WiFi.softAPIP().toString().c_str());
+                  WiFi.softAPIP().toString().c_str(), WiFi.softAPSSID().c_str(),
+                  WiFi.softAPmacAddress().c_str(), WiFi.softAPgetStationNum());
+}
+
+void WifiManagerEx::resetWifiStack()
+{
+    Serial.println("[WiFi] WiFi 栈已重置，重新初始化 AP_STA");
+    WiFi.setAutoReconnect(false);
+    WiFi.softAPdisconnect(true);
+    WiFi.disconnect(true);
+    delay(200);
+    WiFi.mode(WIFI_OFF);
+    delay(500);
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false);
+    staPausedForScan = false;
 }
 
 void WifiManagerEx::startConfigPortal()
@@ -262,6 +300,7 @@ void WifiManagerEx::startConfigPortal()
         staDownSince = millis();
 
     setupConfigPortalHandlers();
+    resetWifiStack();
     startAccessPoint();
 
     // captive portal：把所有域名解析到 AP IP，手机自动弹出配网页
@@ -275,6 +314,25 @@ void WifiManagerEx::startConfigPortal()
                   deviceApName().c_str(), WiFi.softAPIP().toString().c_str());
 }
 
+void WifiManagerEx::startReconfigurePortal()
+{
+    // 先停掉 STA 的自动重连，否则已有路由器连接会让门户刚打开就被关闭。
+    WiFi.setAutoReconnect(false);
+    // 第二个参数 eraseap=true 会清除 ESP32 WiFi 驱动保存的旧凭据；
+    // 这只影响 WiFi NVS，不会删除 HomeKit 配对或其他应用配置。
+    WiFi.disconnect(true, true);
+    SPIFFS.remove("/wifi.json");
+    pendingSsid = "";
+    pendingPass = "";
+    hasCredentials = false;
+    wifiConnected = false;
+    staConnectInProgress = false;
+    retryCount = 0;
+    staDownSince = millis();
+    startConfigPortal();
+    Serial.println("[WiFi] 已清除凭据，进入重新配网模式");
+}
+
 void WifiManagerEx::stopConfigPortal()
 {
     if (!configPortalActive)
@@ -286,7 +344,8 @@ void WifiManagerEx::stopConfigPortal()
     // 保持 AP_STA 模式但不广播：下次要配网时 softAP() 直接拉起即可
     configPortalActive = false;
     scanState = -2;
-    Serial.println("[AP] 配网门户已关闭，热点停止广播");
+    Serial.printf("[AP] 配网门户已关闭，热点停止广播；当前 AP SSID=%s IP=%s\n",
+                  WiFi.softAPSSID().c_str(), WiFi.softAPIP().toString().c_str());
 }
 
 void WifiManagerEx::setupConfigPortalHandlers()
@@ -355,6 +414,9 @@ void WifiManagerEx::handleScanRequest()
     // 尚未发起，或上次结果已被取走：启动一次新扫描
     if (scanState == -2 && done != WIFI_SCAN_RUNNING)
     {
+        WiFi.setAutoReconnect(false);
+        WiFi.disconnect(false);
+        staPausedForScan = true;
         WiFi.scanDelete();
         // async=true，隐藏 SSID 也一并返回
         WiFi.scanNetworks(true, true);
@@ -372,6 +434,7 @@ void WifiManagerEx::handleScanRequest()
         {
             WiFi.scanDelete();
             scanState = -2;
+            resumeStaAfterScan();
             configServer.send(200, "application/json; charset=utf-8",
                               "{\"ok\":false,\"scanning\":false,\"count\":0,\"items\":[],"
                               "\"message\":\"扫描超时，请重试或手动输入名称\"}");
@@ -387,6 +450,7 @@ void WifiManagerEx::handleScanRequest()
     {
         WiFi.scanDelete();
         scanState = -2;
+        resumeStaAfterScan();
         configServer.send(200, "application/json; charset=utf-8",
                           "{\"ok\":false,\"scanning\":false,\"count\":0,\"items\":[],"
                           "\"message\":\"扫描失败，请重试或手动输入名称\"}");
@@ -412,7 +476,16 @@ void WifiManagerEx::handleScanRequest()
 
     WiFi.scanDelete();
     scanState = -2; // 允许下次重新扫描
+    resumeStaAfterScan();
     configServer.send(200, "application/json; charset=utf-8", json);
+}
+
+void WifiManagerEx::resumeStaAfterScan()
+{
+    if (!staPausedForScan)
+        return;
+    staPausedForScan = false;
+    beginStaConnect();
 }
 
 bool WifiManagerEx::loadWifiCredentials(String &ssid, String &pass)
@@ -457,227 +530,62 @@ String WifiManagerEx::buildConfigPageHtml(const String &apName)
     return String(
         "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>设备配网</title><style>"
-        ":root{--bg:#eef3f8;--card:#ffffff;--text:#102033;--muted:#66778a;--line:#d8e1ea;--blue:#0a84ff;--green:#28a745;--red:#d64545;--shadow:0 10px 30px rgba(16,32,51,.08)}"
-        "*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:linear-gradient(180deg,#f6f9fc 0%,#eef3f8 100%);color:var(--text)}"
-        ".wrap{max-width:560px;margin:0 auto;padding:18px 16px 28px}.hero{padding:10px 2px 14px}.eyebrow{display:inline-block;font-size:12px;color:var(--blue);font-weight:700;letter-spacing:.04em;text-transform:uppercase}.title{margin:8px 0 6px;font-size:28px;line-height:1.15}.sub{margin:0;color:var(--muted);font-size:14px;line-height:1.7}"
-        ".card{background:var(--card);border:1px solid rgba(16,32,51,.08);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-top:14px}"
-        ".status{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-radius:12px;background:#f7fbff;border:1px solid var(--line);font-size:14px;line-height:1.5}.status b{display:block;font-size:16px;color:var(--text)}"
-        ".grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.pill{padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid var(--line);font-size:13px;color:var(--muted)}.pill b{display:block;color:var(--text);font-size:14px;margin-top:2px;word-break:break-all}"
-        "label{display:block;margin:14px 0 6px;font-size:13px;color:var(--muted);font-weight:600}"
-        "select,input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:15px;color:var(--text);outline:none}select:focus,input:focus{border-color:rgba(10,132,255,.55);box-shadow:0 0 0 3px rgba(10,132,255,.12)}"
-        ".row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{appearance:none;border:0;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:600;cursor:pointer}.btn.primary{background:var(--blue);color:#fff;flex:1}.btn.secondary{background:#edf3f8;color:var(--text);border:1px solid var(--line)}.btn:disabled{opacity:.55;cursor:not-allowed}"
-        ".hint{margin-top:12px;font-size:13px;color:var(--muted);line-height:1.6}.msg{margin-top:12px;min-height:20px;font-size:13px;line-height:1.5}.msg.ok{color:var(--green)}.msg.err{color:var(--red)}.msg.info{color:var(--blue)}"
-        ".list{display:grid;gap:8px;margin-top:12px;max-height:240px;overflow:auto}.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:14px}.item small{color:var(--muted)}"
-        ".badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eaf4ff;color:var(--blue);font-size:12px;font-weight:700}.badge.ok{background:#e8f6ec;color:var(--green)}"
+        "<title>ESP32AC 配网</title><style>"
+        ":root{--text:#1c1e21;--muted:#6b7280;--line:#e5e7eb;--blue:#0a84ff;--green:#28a745;--red:#d64545}"
+        "*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6f8;color:var(--text);-webkit-font-smoothing:antialiased}"
+        ".wrap{max-width:400px;margin:0 auto;padding:36px 16px 24px}"
+        ".card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px}"
+        ".header{display:flex;justify-content:space-between;align-items:center;gap:12px}"
+        ".title{font-size:21px;font-weight:700;margin:0}"
+        ".label-row{display:flex;justify-content:space-between;align-items:baseline;margin:16px 0 6px}"
+        ".label-row label{margin:0}"
+        ".hint{font-size:12px;color:var(--muted)}"
+        ".status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}"
+        ".dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--blue)}.dot.green{background:var(--green)}"
+        ".meta{display:grid;gap:8px;margin-top:14px;padding:12px 14px;background:#f8f9fa;border:1px solid var(--line);border-radius:12px;font-size:13px}"
+        ".meta-row{display:flex;justify-content:space-between;gap:12px;color:var(--muted)}"
+        ".meta-row b{color:var(--text);font-weight:600;word-break:break-all;text-align:right}"
+        "label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}"
+        "input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;outline:none;background:#fff;color:var(--text)}"
+        "input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(10,132,255,.12)}"
+        "#scanBtn{width:100%;margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:10px;background:#fafbfc;font-size:14px;color:var(--text);cursor:pointer}"
+        "#scanBtn:disabled{opacity:.55;cursor:not-allowed}"
+        ".list{display:grid;gap:6px;margin-top:10px;max-height:220px;overflow:auto}"
+        ".item{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:14px;text-align:left;cursor:pointer}"
+        ".item small{color:var(--muted);font-size:12px;white-space:nowrap}"
+        "#saveBtn{width:100%;margin-top:16px;padding:13px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-size:15px;font-weight:600;cursor:pointer}"
+        ".msg{margin-top:10px;min-height:18px;font-size:13px;line-height:1.5}"
+        ".msg.ok{color:var(--green)}.msg.err{color:var(--red)}.msg.info{color:var(--blue)}"
+        ".foot{margin-top:14px;font-size:12px;color:var(--muted);line-height:1.6}"
         "</style></head><body><div class='wrap'>"
-        "<div class='hero'><span class='eyebrow'>WiFi Provisioning</span><h1 class='title'>设备配网</h1>"
-        "<p class='sub'>设备会同时保留热点和 STA 重连能力。换了环境也能继续找回它，不用等它自己死扛。</p></div>"
-        "<div class='card'><div class='status'><div><span class='badge' id='portalBadge'>门户开启中</span><b id='connState'>正在连接现有 WiFi</b><span id='connDesc'>热点已开启，支持继续重连。</span></div><div style='text-align:right'><small style='color:var(--muted)'>AP</small><b id='apip'>192.168.4.1</b></div></div>"
-        "<div class='grid'><div class='pill'>设备编号<b>" + apName + "</b></div><div class='pill'>MQTT 主题<b>" + deviceMqttBase() + "</b></div></div></div>"
-        "<div class='card'><form id='wifiForm'><label for='ssid'>WiFi 名称</label><input id='ssid' name='ssid' list='wifiOptions' required placeholder='扫描后选择，或手动输入 2.4GHz WiFi 名称' autocomplete='off'><datalist id='wifiOptions'></datalist><div class='row'><button type='button' class='btn secondary' id='scanBtn' onclick='doScan()'>扫描 WiFi</button><button type='submit' class='btn primary'>保存并连接</button></div><label for='pass'>WiFi 密码</label><input type='password' name='pass' id='pass' placeholder='开放网络可留空' autocomplete='off'></form><div class='hint'>ESP32 只能连接 2.4GHz WiFi。如果扫描不到，也可以手动输入 WiFi 名称。</div><div id='msg' class='msg'></div></div>"
-        "<div class='card'><div style='display:flex;justify-content:space-between;align-items:center'><div><b style='font-size:16px'>附近网络</b><div class='sub' style='font-size:13px'>点扫描后选择要连接的热点</div></div><span class='badge' id='scanBadge'>未扫描</span></div><div id='scanList' class='list'></div></div>"
+        "<div class='card'>"
+        "<div class='header'><div class='title'>ESP32AC 配网</div><div class='status'><span class='dot' id='dot'></span><span id='statusText'>等待配置</span></div></div>"
+        "<div class='meta'><div class='meta-row'><span>设备编号</span><b>" + apName + "</b></div><div class='meta-row'><span>MQTT 主题</span><b>" + deviceMqttBase() + "</b></div></div>"
+        "<form id='wifiForm'>"
+        "<div class='label-row'><label for='ssid'>WiFi 名称</label><span class='hint'>仅支持 2.4GHz WiFi</span></div>"
+        "<input id='ssid' name='ssid' list='wifiOptions' placeholder='扫描选择，或手动输入' autocomplete='off'>"
+        "<datalist id='wifiOptions'></datalist>"
+        "<button type='button' id='scanBtn' onclick='doScan()'>扫描附近 WiFi</button>"
+        "<div id='scanList' class='list'></div>"
+        "<label for='pass'>WiFi 密码</label>"
+        "<input type='password' name='pass' id='pass' placeholder='开放网络可留空' autocomplete='off'>"
+        "<button type='submit' id='saveBtn'>保存并连接</button>"
+        "</form>"
+        "<div id='msg' class='msg'></div>"
+        "</div>"
         "<script>"
-        "var msg=document.getElementById('msg');var scanBtn=document.getElementById('scanBtn');var scanList=document.getElementById('scanList');var connState=document.getElementById('connState');var connDesc=document.getElementById('connDesc');var apip=document.getElementById('apip');var portalBadge=document.getElementById('portalBadge');var scanBadge=document.getElementById('scanBadge');"
-        "function setMsg(text,kind){msg.className='msg '+(kind||'');msg.textContent=text||'';}"
-        "function refreshStatus(){fetch('/status').then(function(r){return r.json()}).then(function(s){apip.textContent=s.apip||'192.168.4.1';if(s.connected){portalBadge.textContent='STA 已连接';portalBadge.className='badge ok';connState.textContent='WiFi 已连接';connDesc.textContent=s.ssid?s.ssid+' · '+s.ip:s.ip;}else{portalBadge.textContent='门户开启中';portalBadge.className='badge';connState.textContent='正在尝试重连';connDesc.textContent='热点开放中，等待新的 WiFi 配置';}}).catch(function(){});}"
-        "function renderScan(data){var list=data.items||[];scanList.innerHTML='';var options=document.getElementById('wifiOptions');options.innerHTML='';if(!list.length){scanBadge.textContent='无结果';return;}scanBadge.textContent=list.length+' 个结果';list.forEach(function(w){var option=document.createElement('option');option.value=w.ssid;options.appendChild(option);var row=document.createElement('button');row.type='button';row.className='item';row.onclick=function(){document.getElementById('ssid').value=w.ssid;setMsg('已选择 '+w.ssid,'info');};var left=document.createElement('div');left.innerHTML='<div>'+w.ssid+'</div><small>'+(w.open?'开放网络':'加密网络')+'</small>';var right=document.createElement('small');right.textContent=w.rssi+' dBm';row.appendChild(left);row.appendChild(right);scanList.appendChild(row);});}"
+        "function $(id){return document.getElementById(id);}"
+        "var msg=$('msg'),scanBtn=$('scanBtn'),scanList=$('scanList'),ssid=$('ssid'),pass=$('pass');"
+        "function setMsg(t,k){msg.className='msg '+(k||'');msg.textContent=t||'';}"
+        "function refreshStatus(){fetch('/status').then(function(r){return r.json()}).then(function(s){var dot=$('dot'),st=$('statusText');if(s.connected){dot.className='dot green';st.textContent=s.ssid?s.ssid+' 已连接':'WiFi 已连接';}else{dot.className='dot';st.textContent='等待配置';}}).catch(function(){});}"
+        "function renderScan(data){var list=data.items||[];var options=$('wifiOptions');options.innerHTML='';scanList.innerHTML='';scanBtn.disabled=false;scanBtn.textContent='重新扫描';if(!list.length){setMsg(data.message||'没有扫到可用 WiFi，可手动输入名称','info');return;}list.forEach(function(w){var o=document.createElement('option');o.value=w.ssid;options.appendChild(o);var row=document.createElement('button');row.type='button';row.className='item';row.onclick=function(){ssid.value=w.ssid;setMsg('已选择 '+w.ssid,'ok');};row.innerHTML='<span>'+w.ssid+'</span><small>'+(w.open?'开放':'加密')+' · '+w.rssi+'dBm</small>';scanList.appendChild(row);});}"
         "var scanTries=0;"
         "function pollScan(){fetch('/scan').then(function(r){return r.json()}).then(function(data){"
-        "if(data.scanning&&scanTries++<20){scanBadge.textContent='扫描中';setTimeout(pollScan,1000);return;}"
-        "scanTries=0;scanBtn.disabled=false;renderScan(data);var list=data.items||[];"
-        "setMsg(list.length?'扫描完成':(data.message||'没有扫到可用 WiFi，可手动输入名称'),'info');"
-        "}).catch(function(){scanTries=0;scanBtn.disabled=false;setMsg('扫描失败，请重试；也可以手动输入 WiFi 名称','err');scanBadge.textContent='失败';});}"
-        "function doScan(){scanBtn.disabled=true;scanTries=0;scanBadge.textContent='扫描中';setMsg('正在扫描附近 2.4GHz WiFi…','info');pollScan();}"
-        "document.getElementById('wifiForm').addEventListener('submit',function(e){e.preventDefault();var ssid=document.getElementById('ssid').value.trim();var pass=document.getElementById('pass').value; if(!ssid){setMsg('请先选择一个 WiFi','err');return;}setMsg('正在保存并连接 '+ssid+'…','info');var form=new FormData();form.append('ssid',ssid);form.append('pass',pass);fetch('/save',{method:'POST',body:form}).then(function(r){return r.json()}).then(function(j){setMsg(j.message||'已保存，正在连接','ok');refreshStatus();}).catch(function(){setMsg('保存失败，请重试','err');});});"
+        "if(data.scanning&&scanTries++<20){setMsg('扫描中…','info');setTimeout(pollScan,1000);return;}"
+        "scanTries=0;renderScan(data);"
+        "}).catch(function(){scanTries=0;scanBtn.disabled=false;setMsg('扫描失败，可手动输入 WiFi 名称','err');});}"
+        "function doScan(){scanBtn.disabled=true;scanTries=0;scanList.innerHTML='';setMsg('正在扫描附近 2.4GHz WiFi…','info');pollScan();}"
+        "$('wifiForm').addEventListener('submit',function(e){e.preventDefault();var s=ssid.value.trim();if(!s){setMsg('请先选择或输入 WiFi 名称','err');return;}setMsg('正在保存并连接 '+s+'…','info');var f=new FormData();f.append('ssid',s);f.append('pass',pass.value);fetch('/save',{method:'POST',body:f}).then(function(r){return r.json()}).then(function(j){setMsg(j.message||'已保存，正在连接','ok');refreshStatus();}).catch(function(){setMsg('保存失败，请重试','err');});});"
         "refreshStatus();setInterval(refreshStatus,3000);"
         "</script></div></body></html>");
-}
-
-void WifiManagerEx::startWebServer()
-{
-    if (webServerActive)
-        return;
-    setupWebHandlers();
-    server.begin();
-    webServerActive = true;
-
-    // ArduinoOTA：PlatformIO 里 pio run -t upload --upload-port <设备IP> 即可无线烧录
-    ArduinoOTA.setHostname(deviceApName().c_str());
-    ArduinoOTA.onStart([]() { Serial.println("OTA 开始..."); });
-    ArduinoOTA.onEnd([]() { Serial.println("\nOTA 结束，重启中..."); });
-    ArduinoOTA.onError([](ota_error_t err) { Serial.printf("OTA 错误: %u\n", err); });
-    ArduinoOTA.begin();
-    otaReady = true;
-
-    Serial.println("WebServer已启动");
-}
-
-void WifiManagerEx::stopWebServer()
-{
-    server.stop();
-    webServerActive = false;
-    otaReady = false; // 停服后不要再 handle OTA
-    Serial.println("WebServer已关闭");
-}
-
-void WifiManagerEx::setupWebHandlers()
-{
-    if (webHandlersReady)
-        return;
-
-    // 云端 OTA：查询当前固件版本和升级地址
-    server.on("/otaget", HTTP_GET, [this]() {
-        server.send(200, "application/json",
-                    "{\"fw\":\"" + otaManager.getVersion() +
-                    "\",\"url\":\"" + otaManager.getUrl() + "\"}");
-    });
-
-    // 只检查版本（不下载），返回 JSON 供调试/网页使用
-    server.on("/otacheck", HTTP_GET, [this]() {
-        String ver = "", err = "";
-        int ret = otaManager.checkForUpdate(ver, err);
-        String json = "{\"fw\":\"" + otaManager.getVersion() + "\",\"latest\":\"" +
-                      (ret == OTA_CHECK_OK ? ver : otaManager.getVersion()) +
-                      "\",\"update\":" + String(ret == OTA_CHECK_OK ? "true" : "false") + "}";
-        server.send(200, "application/json", json);
-    });
-
-    // 云端 OTA：设置升级地址（http://IP:8080/otaset?url=...）
-    server.on("/otaset", HTTP_GET, [this]() {
-        String u = server.arg("url");
-        bool ok = otaManager.setUrl(u);
-        server.send(200, "text/plain", ok ? "OTA URL saved" : "invalid url");
-    });
-
-    // 云端 OTA：立即检查更新（http://IP:8080/ota）
-    server.on("/ota", HTTP_GET, [this]() {
-        String otaErr = "";
-        int ret = otaManager.checkUpdate(otaErr);
-        if (ret == OTA_CHECK_OK)
-        {
-            server.send(200, "text/plain", "OTA ok, rebooting...");
-            delay(300);
-            ESP.restart();
-        }
-        else if (ret == OTA_CHECK_NO_UPDATE)
-        {
-            server.send(200, "text/plain", "OTA no update: " + otaErr);
-        }
-        else
-        {
-            server.send(200, "text/plain", "OTA fail: " + otaErr);
-        }
-    });
-
-    // 网页 OTA 升级页面
-    server.on("/update", HTTP_GET, [this]() {
-        String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
-                      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                      "<title>固件升级</title></head>"
-                      "<body style='font-family:sans-serif;padding:20px;text-align:center'>"
-                      "<h2>固件升级 (OTA)</h2>"
-                      "<form method='POST' action='/update' enctype='multipart/form-data'>"
-                      "<input type='file' name='firmware' accept='.bin'><br><br>"
-                      "<button type='submit'>上传并升级</button></form>"
-                      "<p style='color:#888;font-size:12px'>升级期间请勿断电，完成后设备自动重启</p>"
-                      "</body></html>";
-        server.send(200, "text/html", html);
-    });
-
-    // OTA 固件上传
-    server.on("/update", HTTP_POST, [this]() {
-        server.sendHeader("Connection", "close");
-        server.send(200, "text/plain", Update.hasError() ? "升级失败" : "升级成功，正在重启...");
-        delay(1000);
-        ESP.restart();
-    }, [this]() {
-        HTTPUpload &upload = server.upload();
-        if (upload.status == UPLOAD_FILE_START)
-        {
-            Serial.printf("OTA 上传开始: %s\n", upload.filename.c_str());
-            if (!Update.begin(UPDATE_SIZE_UNKNOWN))
-                Update.printError(Serial);
-        }
-        else if (upload.status == UPLOAD_FILE_WRITE)
-        {
-            if (Update.write(upload.buf, upload.currentSize) != upload.currentSize)
-                Update.printError(Serial);
-        }
-        else if (upload.status == UPLOAD_FILE_END)
-        {
-            if (Update.end(true))
-                Serial.printf("OTA 成功，重启中... (%d 字节)\n", upload.totalSize);
-            else
-                Update.printError(Serial);
-        }
-    });
-
-    server.on("/", HTTP_GET, [this]()
-              {
-        File file = SPIFFS.open("/index.html", "r");
-        if (!file) {
-            server.send(404, "text/plain", "文件未找到");
-            return;
-        }
-        String html = file.readString();
-        file.close();
-        server.send(200, "text/html", html); });
-
-    server.on("/set", HTTP_GET, [this]()
-              {
-        String temp = server.arg("temp");
-        String mode = server.arg("mode");
-        String speed = server.arg("speed");
-        String protocol = server.arg("protocol");
-        int temperature = temp.toInt();
-        int modeValue = mode.toInt();
-        int speedValue = speed.toInt();
-        if (!protocol.isEmpty()) {
-            updateProtocolFromString(protocol, ac.next.protocol);
-        }
-        AC_SET_DATA(temperature, speedValue, modeValue);
-        String response = "温度=" + temp + "°C, 模式=" + mode + ", 风速=" + speed;
-        if (!protocol.isEmpty()) response += ", 协议=" + protocol;
-        server.send(200, "text/plain", response); });
-
-    server.on("/protocol", HTTP_GET, [this]()
-              { server.send(200, "text/plain", lastProtocolName); });
-
-    server.on("/sensor", HTTP_GET, [this]()
-              {
-        if (isnan(envTemperature) || isnan(enHumidity)) {
-            server.send(500, "application/json", "{\"error\":\"传感器读取失败\"}");
-            return;
-        }
-        String json = "{\"temp\":" + String(envTemperature, 1) + ",\"humidity\":" + String(enHumidity, 1) + "}";
-        server.send(200, "application/json", json); });
-
-    server.on("/mqttget", HTTP_GET, [this]()
-              { server.send(200, "application/json", mqttManager.getConfigJson()); });
-
-    server.on("/mqttset", HTTP_GET, [this]()
-              {
-        String host = server.arg("host");
-        String port = server.arg("port");
-        String user = server.arg("user");
-        String pass = server.arg("pass");
-        String topic = server.arg("topic");
-        mqttManager.setConfig(host, port.isEmpty() ? 1883 : (uint16_t)port.toInt(), user, pass, topic);
-        server.send(200, "text/plain", "MQTT config saved: " + mqttManager.getConfigJson()); });
-
-    server.on("/power", HTTP_GET, [this]()
-              {
-        static bool powerState = false;
-        powerState = !powerState;
-        if (powerState) {
-            AC_SET_DATA(26, 3, 1);
-            server.send(200, "text/plain", "空调已开启");
-        } else {
-            ac.next.power = false;
-            ac.sendAc();
-            server.send(200, "text/plain", "空调已关闭");
-        } });
-
-    webHandlersReady = true;
 }

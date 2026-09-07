@@ -24,7 +24,9 @@ void MqttManager::begin()
     loadConfig();
     client.setBufferSize(1024);
     client.setKeepAlive(30);
-    client.setSocketTimeout(15);
+    // 连接异常时不要让 PubSubClient 把主循环卡住十几秒。
+    // 3 秒足够完成正常局域网 MQTT 握手，失败后由 loop() 的退避逻辑重试。
+    client.setSocketTimeout(3);
     client.setServer(host.c_str(), port);
     client.setCallback(MqttManager::onMessage);
     DBG("[MQTT] 初始化完成 host=%s port=%d topic=%s\n", host.c_str(), port, topic.c_str());

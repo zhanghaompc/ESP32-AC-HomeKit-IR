@@ -5,8 +5,6 @@
 #include <freertos/semphr.h>
 
 class HTTPClient;
-class WiFiClient;
-class WiFiClientSecure;
 
 // 检查更新结果（与 HTTPUpdate 枚举数值保持一致，避免跨头文件依赖）
 enum OtaCheckResult

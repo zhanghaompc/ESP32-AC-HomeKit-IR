@@ -28,20 +28,27 @@ Write-Host "目标: $repo@$branch"
 
 $index = Join-Path $dir 'index.html'
 $mqtt = Join-Path $dir 'mqtt.min.js'
-if (!(Test-Path $index) -or !(Test-Path $mqtt)) { throw '缺少 index.html 或 mqtt.min.js' }
+$manifest = Join-Path $dir 'firmware\ota_esp32_wifi.json'
+if (!(Test-Path $index) -or !(Test-Path $mqtt) -or !(Test-Path $manifest)) { throw '缺少 index.html、mqtt.min.js 或 firmware\ota_esp32_wifi.json' }
 
 gh auth status 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'gh 未登录，请先运行 gh auth login' }
 
 $msg = "sync panel from local (" + (Get-Date -Format 'yyyy-MM-dd HH:mm') + ")"
 
-Write-Host "[1/2] 上传 index.html ..." -ForegroundColor Green
+Write-Host "[1/3] 上传 index.html ..." -ForegroundColor Green
 $b64i = [Convert]::ToBase64String([IO.File]::ReadAllBytes($index))
 Invoke-GhPut 'index.html' $b64i $msg | Out-Null
 
-Write-Host "[2/2] 上传 mqtt.min.js ..." -ForegroundColor Green
+Write-Host "[2/3] 上传 mqtt.min.js ..." -ForegroundColor Green
 $b64m = [Convert]::ToBase64String([IO.File]::ReadAllBytes($mqtt))
 Invoke-GhPut 'mqtt.min.js' $b64m $msg | Out-Null
+
+Write-Host "[3/4] 上传 OTA 清单 ..." -ForegroundColor Green
+$b64o = [Convert]::ToBase64String([IO.File]::ReadAllBytes($manifest))
+Invoke-GhPut 'firmware/ota_esp32_wifi.json' $b64o $msg | Out-Null
+Write-Host "[4/4] 上传 OTA 根目录兼容清单 ..." -ForegroundColor Green
+Invoke-GhPut 'ota_esp32_wifi.json' $b64o $msg | Out-Null
 
 Write-Host ""
 Write-Host "=========== 发布完成 ===========" -ForegroundColor Cyan

@@ -102,10 +102,8 @@ void irDisableRecv()
 bool wifiConnected = false;
 bool shouldSaveConfig = false;
 #ifndef BLE_ONLY
-bool webServerActive = false; // 默认不启动Web服务器
 Ticker ticker;                // 用于灯光闪烁的定时器
 Ticker rgbBlinkTicker;        // WS2812B闪烁定时器
-WebServer server(8080);
 #endif
 
 // 协议映射表（保持不变）
@@ -248,7 +246,6 @@ void configModeCallback();
 void tick();
 void initWifiManager();
 void checkWiFiConnection();
-void Web_set();
 void key_init();
 void key_scan();
 void IRrecvDump(void);
@@ -373,8 +370,6 @@ void disableWiFi()
   Serial.println("关闭WiFi...");
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
-  server.stop();
-  webServerActive = false;
   Serial.println("WiFi已关闭");
 }
 
@@ -714,6 +709,10 @@ void initHomeSpan()
   homeSpanStarted = true;
 
   Serial.println("[HomeKit] WiFi 已就绪，初始化 HomeSpan...");
+  // WifiManagerEx 独占 WiFi 重连和配网 AP。HomeSpan 只消费网络事件，
+  // 关闭其详细重连日志，并阻止它额外创建一个 setup SSID。
+  homeSpan.setVerboseWifiReconnect(false);
+  homeSpan.setApFunction([]() {});
   homeSpan.setPairingCode("11122333");
   homeSpan.begin(Category::AirConditioners, "空调");
   new SpanAccessory();
@@ -724,120 +723,6 @@ void initHomeSpan()
   Serial.println("[HomeKit] HomeSpan 初始化完成");
 }
 
-#endif
-
-#ifndef BLE_ONLY
-// Web服务器设置（修改红外学习灯光）
-void Web_set()
-{
-  if (!SPIFFS.begin(true))
-  {
-    Serial.println("SPIFFS 初始化失败");
-    return;
-  }
-
-  server.on("/", HTTP_GET, []()
-            {
-    File file = SPIFFS.open("/index.html", "r");
-    if(!file){
-      server.send(404, "text/plain", "文件未找到");
-      return;
-    }
-
-    String html = file.readString();
-    file.close();
-    server.send(200, "text/html", html); });
-
-  server.on("/set", HTTP_GET, []()
-            {
-    String temp = server.arg("temp");
-    String mode = server.arg("mode");
-    String speed = server.arg("speed");
-    String protocol = server.arg("protocol");
-
-    Serial.printf("[网页设置] 收到参数 - 温度: %s°C, 模式: %s, 风速: %s, 协议: %s\n",
-                 temp.c_str(), mode.c_str(), speed.c_str(), protocol.c_str());
-
-    int temperature = temp.toInt();
-    int modeValue = mode.toInt();
-    int speedValue = speed.toInt();
-
-    if (!protocol.isEmpty()) {
-      updateProtocolFromString(protocol, ac.next.protocol);
-    }
-
-    AC_SET_DATA(temperature, speedValue, modeValue);
-
-    String response = "温度=" + temp + "°C, 模式=" + mode + ", 风速=" + speed;
-    if (!protocol.isEmpty()) {
-      response += ", 协议=" + protocol;
-    }
-    server.send(200, "text/plain", response); });
-
-  server.on("/protocol", HTTP_GET, []()
-            { server.send(200, "text/plain", lastProtocolName); });
-
-  // Web端红外学习（紫灯亮）
-  server.on("/learn", HTTP_GET, []()
-            {
-    Serial.println("开始协议学习...");
-    ledManager.blinkPurple(); // 学习模式：紫灯亮
-    irLearning = true; // 暂停主循环红外解析，数据只给学习流程
-    bool wasRecvEnabled = irReceiverEnabled; // 记录学习前状态，学习后恢复
-    irEnableRecv(); // 学习期间开启红外接收（已开启则跳过，避免重复初始化）
-
-    unsigned long startTime = millis();
-    String detectedProtocol_web = "";
-
-    while (detectedProtocol_web.isEmpty() && (millis() - startTime < 10000)) {
-      String p = handleIrReceiving();
-      // UNKNOWN 是噪声/半截帧，不算识别成功，继续等待真正的协议
-      if (!p.isEmpty() && p != "UNKNOWN") detectedProtocol_web = p;
-      delay(100);
-    }
-
-    irLearning = false;
-    if (!wasRecvEnabled) irDisableRecv(); // 学习前未开启则恢复关闭
-    ledManager.off(); // 学习结束：紫灯关闭
-
-    if (!detectedProtocol_web.isEmpty()) {
-      updateProtocolFromString(detectedProtocol_web, ac.next.protocol);
-      server.send(200, "text/plain", "协议学习成功: " + detectedProtocol_web);
-    } else {
-      server.send(200, "text/plain", "学习超时，未接收到有效信号");
-    } });
-
-  server.on("/toggle", HTTP_GET, []()
-            {
-    webServerActive = !webServerActive;
-    String status = webServerActive ? "WebServer is active now." : "WebServer is disabled now.";
-    server.send(200, "text/plain", status); });
-
-  server.on("/sensor", HTTP_GET, []()
-            {
-    if (isnan(envTemperature) || isnan(enHumidity)) {
-      server.send(500, "application/json", "{\"error\":\"传感器读取失败\"}");
-      return;
-    }
-
-    String json = "{\"temp\":" + String(envTemperature,1) +
-                 ",\"humidity\":" + String(enHumidity,1) + "}";
-    server.send(200, "application/json", json); });
-
-  server.on("/power", HTTP_GET, []()
-            {
-    static bool powerState = false;
-    powerState = !powerState;
-
-    if (powerState) {
-      AC_SET_DATA(26, 3, 1);
-      server.send(200, "text/plain", "空调已开启");
-    } else {
-      ac.next.power = false;
-      ac.sendAc();
-      server.send(200, "text/plain", "空调已关闭");
-    } });
-}
 #endif
 
 // 按键初始化（保持不变）
@@ -898,12 +783,14 @@ void AC_SET_DATA(int temp, int speed, int mode, bool power)
 void setup()
 {
   Serial.begin(115200);
-  Serial2.begin(115200);
   while (!Serial)
     delay(50);
   bleManager.begin();
   key_init();
-
+    WiFi.mode(WIFI_STA);             
+    WiFi.softAPdisconnect(true);      
+    delay(100);
+    Serial.println("[WiFi] AP 已强制关闭，仅保留 STA 模式");
   // 初始化各大模块
   // bleManager.begin();
 #ifndef BLE_ONLY
@@ -985,7 +872,9 @@ void sendEnvironmentDataIfNeeded()
 
 void loop()
 {
-  delay(otaManager.isDownloading() ? 1 : 50); // 下载固件时加快主循环，进度更流畅
+  // 保持主循环响应性：50ms 会让 MQTT/BLE/HomeKit 指令明显发“粘”。
+  // delay(2) 仍会让 FreeRTOS/WiFi/BLE 任务获得调度时间。
+  delay(otaManager.isDownloading() ? 1 : 2);
 
   if (requestFactoryReset)
   {
@@ -1037,12 +926,14 @@ void loop()
 #ifndef BLE_ONLY
     wifiManager.loop();
     mqttManager.loop();
-    // HomeSpan 在 WiFi 首次连上后才初始化，之后持续 poll。
-    // 断网期间不需要停 poll —— HomeSpan 此时不管 WiFi，不会和配网热点冲突。
-    if (wifiManager.isConnected())
+    // HomeSpan 在 WiFi 首次连上后才初始化。
+    // WiFi 断开期间暂停 poll：避免 HomeSpan 内部阻塞式重连和 WifiManagerEx 抢射频，
+    // 也防止配网热点下手机 captive portal 请求被 HomeSpan 内部 Web 服务器处理而刷 Bad GET request。
+    if (wifiManager.isConnected()) {
       initHomeSpan();
-    if (homeSpanStarted)
-      homeSpan.poll();
+      if (homeSpanStarted)
+        homeSpan.poll();
+    }
     timerManager.loop();
 
     // OTA 异步下载驱动：分片读取 + MQTT 进度上报

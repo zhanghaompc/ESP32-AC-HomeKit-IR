@@ -3,6 +3,7 @@
 #include "Debug.h"
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
+#include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Update.h>
@@ -17,11 +18,12 @@
 
 static const char *OTA_REPO = "zhanghaompc/ESP32-AC-HomeKit-IR";
 static const char *OTA_MANIFEST_BASES[] = {
-    // GitHub Pages 几乎随上传立即更新，优先使用它读取版本清单；
-    // 下面两个 jsDelivr 源只作为兜底。
-    "https://zhanghaompc.github.io/mqtt-control",
+    // 官方固件仓库作为唯一权威来源，避免控制面板仓库中的旧清单
+    // 覆盖已经发布的新版本（例如页面仍缓存 1.5.26）。
     "https://cdn.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
-    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master"};
+    "https://fastly.jsdelivr.net/gh/zhanghaompc/ESP32-AC-HomeKit-IR@master",
+    // 控制面板仓库仅作最后备用来源。
+    "https://zhanghaompc.github.io/mqtt-control"};
 
 #define OTA_TASK_STACK_SIZE 10240
 

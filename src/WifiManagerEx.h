@@ -26,20 +26,21 @@ public:
     void enable();
     void disable();
     bool isConnected() const;
+    // 配网门户状态，主循环可据此暂停 HomeSpan 的轮询，避免抢占 80 端口。
+    bool isConfigPortalActive() const { return configPortalActive; }
     // 手动拉起配网热点（按键/指令触发），会重置退避计时
     void startConfigPortal();
+    // 清除当前 WiFi 凭据并进入重新配网门户
+    void startReconfigurePortal();
 
 private:
-    WebServer server;       // 业务网页 :8080
     WebServer configServer; // 配网门户 :80
     DNSServer dnsServer;    // captive portal：全部域名指向 AP IP
 
     bool wifiConnected = false;
-    bool webServerActive = false;
     bool configPortalActive = false;
-    bool webHandlersReady = false;
     bool configHandlersReady = false;
-    bool otaReady = false;
+    bool staConnectInProgress = false;
     bool hasCredentials = false;
     bool radioEnabled = false;
 
@@ -55,24 +56,25 @@ private:
     int scanState = -2; // -2=未开始 -1=进行中 >=0=结果数
     unsigned long scanStartTime = 0;
     static const unsigned long scanTimeoutMs = 15000;
+    // 扫描期间暂停 STA，避免 ESP32 单射频拒绝扫描或导致配网页卡顿
+    bool staPausedForScan = false;
 
     String pendingSsid;
     String pendingPass;
 
-    void setupWebHandlers();
     void setupConfigPortalHandlers();
     void checkWiFiConnection();
     void beginStaConnect();
     // 已移除：handleWiFiEvent()（空实现）、ensureConfigPortal()（逻辑并入 checkWiFiConnection）
     unsigned long currentBackoff() const;
-    void startWebServer();
-    void stopWebServer();
     void startAccessPoint();
+    void resetWifiStack();
     void stopConfigPortal();
     void connectWiFi();
     void disconnectWiFi();
     void syncHomeSpanWifi();
     void handleScanRequest();
+    void resumeStaAfterScan();
     bool loadWifiCredentials(String &ssid, String &pass);
     void saveWifiCredentials(const String &ssid, const String &pass);
     String buildConfigPageHtml(const String &apName);

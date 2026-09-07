@@ -32,7 +32,9 @@ void TimerManager::syncTime()
         configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
         struct tm timeinfo;
-        if (getLocalTime(&timeinfo))
+        // Arduino-ESP32 的默认超时约 5 秒；NTP 暂时不可达时会拖住整个主循环。
+        // 时间同步由 loop() 每 10 秒重试，因此这里使用短超时即可。
+        if (getLocalTime(&timeinfo, 100))
         {
             timeSynced = true;
             Serial.print("时间同步成功: ");
