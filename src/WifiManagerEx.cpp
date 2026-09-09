@@ -257,7 +257,7 @@ void WifiManagerEx::checkWiFiConnection()
 
 void WifiManagerEx::startAccessPoint()
 {
-    String apName = deviceApName(); // 例如 ESP32AC_a1b2
+    String apName = deviceApName(); // 例如 ESP32AC_a1b2c3d4e5f6
 
     // 只在 AP_STA 下开热点，绝不切成纯 WIFI_AP —— 那样会关掉 STA，
     // 设备就再也没机会自己连回去了。
@@ -359,6 +359,7 @@ void WifiManagerEx::setupConfigPortalHandlers()
 
     configServer.on("/status", HTTP_GET, [this]() {
         String json = "{\"connected\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") +
+                      ",\"connecting\":" + String(staConnectInProgress ? "true" : "false") +
                       ",\"portal\":" + String(configPortalActive ? "true" : "false") +
                       ",\"apip\":\"" + jsonEscape(WiFi.softAPIP().toString()) +
                       "\",\"ip\":\"" + jsonEscape(WiFi.localIP().toString()) +
@@ -545,6 +546,10 @@ String WifiManagerEx::buildConfigPageHtml(const String &apName)
         ".meta{display:grid;gap:8px;margin-top:14px;padding:12px 14px;background:#f8f9fa;border:1px solid var(--line);border-radius:12px;font-size:13px}"
         ".meta-row{display:flex;justify-content:space-between;gap:12px;color:var(--muted)}"
         ".meta-row b{color:var(--text);font-weight:600;word-break:break-all;text-align:right}"
+        ".connecting{text-align:center;padding:24px 8px 12px}"
+        ".spinner{width:52px;height:52px;margin:0 auto 18px;border:5px solid #dbeafe;border-top-color:var(--blue);border-radius:50%;animation:spin 1s linear infinite}"
+        "@keyframes spin{to{transform:rotate(360deg)}}"
+        ".connecting-title{font-size:17px;font-weight:600;margin-bottom:8px}.connecting-hint{font-size:13px;color:var(--muted);line-height:1.6}"
         "label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}"
         "input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;outline:none;background:#fff;color:var(--text)}"
         "input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(10,132,255,.12)}"
@@ -561,7 +566,8 @@ String WifiManagerEx::buildConfigPageHtml(const String &apName)
         "<div class='card'>"
         "<div class='header'><div class='title'>ESP32AC 配网</div><div class='status'><span class='dot' id='dot'></span><span id='statusText'>等待配置</span></div></div>"
         "<div class='meta'><div class='meta-row'><span>设备编号</span><b>" + apName + "</b></div><div class='meta-row'><span>MQTT 主题</span><b>" + deviceMqttBase() + "</b></div></div>"
-        "<form id='wifiForm'>"
+        "<div id='connectingView' class='connecting'><div class='spinner'></div><div class='connecting-title'>正在连接 WiFi…</div><div class='connecting-hint'>设备正在尝试连接网络<br>请稍候，页面会自动更新状态</div></div>"
+        "<form id='wifiForm' style='display:none'>"
         "<div class='label-row'><label for='ssid'>WiFi 名称</label><span class='hint'>仅支持 2.4GHz WiFi</span></div>"
         "<input id='ssid' name='ssid' list='wifiOptions' placeholder='扫描选择，或手动输入' autocomplete='off'>"
         "<datalist id='wifiOptions'></datalist>"
@@ -575,9 +581,9 @@ String WifiManagerEx::buildConfigPageHtml(const String &apName)
         "</div>"
         "<script>"
         "function $(id){return document.getElementById(id);}"
-        "var msg=$('msg'),scanBtn=$('scanBtn'),scanList=$('scanList'),ssid=$('ssid'),pass=$('pass');"
+        "var msg=$('msg'),scanBtn=$('scanBtn'),scanList=$('scanList'),ssid=$('ssid'),pass=$('pass'),connectingView=$('connectingView'),wifiForm=$('wifiForm');"
         "function setMsg(t,k){msg.className='msg '+(k||'');msg.textContent=t||'';}"
-        "function refreshStatus(){fetch('/status').then(function(r){return r.json()}).then(function(s){var dot=$('dot'),st=$('statusText');if(s.connected){dot.className='dot green';st.textContent=s.ssid?s.ssid+' 已连接':'WiFi 已连接';}else{dot.className='dot';st.textContent='等待配置';}}).catch(function(){});}"
+        "function refreshStatus(){fetch('/status').then(function(r){return r.json()}).then(function(s){var dot=$('dot'),st=$('statusText');if(s.connecting&&!s.connected){connectingView.style.display='block';wifiForm.style.display='none';dot.className='dot';st.textContent='正在连接';}else{connectingView.style.display='none';wifiForm.style.display='block';if(s.connected){dot.className='dot green';st.textContent=s.ssid?s.ssid+' 已连接':'WiFi 已连接';}else{dot.className='dot';st.textContent='等待配置';}}}).catch(function(){});}"
         "function renderScan(data){var list=data.items||[];var options=$('wifiOptions');options.innerHTML='';scanList.innerHTML='';scanBtn.disabled=false;scanBtn.textContent='重新扫描';if(!list.length){setMsg(data.message||'没有扫到可用 WiFi，可手动输入名称','info');return;}list.forEach(function(w){var o=document.createElement('option');o.value=w.ssid;options.appendChild(o);var row=document.createElement('button');row.type='button';row.className='item';row.onclick=function(){ssid.value=w.ssid;setMsg('已选择 '+w.ssid,'ok');};row.innerHTML='<span>'+w.ssid+'</span><small>'+(w.open?'开放':'加密')+' · '+w.rssi+'dBm</small>';scanList.appendChild(row);});}"
         "var scanTries=0;"
         "function pollScan(){fetch('/scan').then(function(r){return r.json()}).then(function(data){"

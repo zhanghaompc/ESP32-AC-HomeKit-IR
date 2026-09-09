@@ -41,7 +41,7 @@ void MqttManager::loadConfig()
         port = 1883;
         user = "";
         pass = "";
-        topic = deviceMqttBase();   // 例如 ac/esp32/a1b2
+        topic = deviceMqttBase();   // 例如 ac/esp32/a1b2c3d4e5f6
         saveConfig();
         return;
     }

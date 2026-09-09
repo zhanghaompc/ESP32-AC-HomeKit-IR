@@ -7,24 +7,24 @@
 // ---- 功能按键 ----
 // 注意：GPIO0 是启动模式脚（低电平=下载模式），只保留 BOOT 键用于刷固件，
 //       功能按键（短按 WiFi/BLE 切换、长按3秒恢复出厂）不要放在 GPIO0 上。
-#define KEY_PIN             0    // 功能按键（GPIO0 只留 BOOT 键，不接功能）***现在pcb没法修改
+#define KEY_PIN 0 // 功能按键（GPIO0 只留 BOOT 键，不接功能）***现在pcb没法修改
 
 // ---- RGB 状态灯（WS2812B）----
-#define LED_PIN             2     // WS2812B 数据脚
+#define LED_PIN 2 // WS2812B 数据脚
 
 // ---- 红外 ----
-#define IR_TX_PIN           4     // 红外发射（IRac）
-#define IR_RX_PIN           23    // 红外接收（TSOP34838）
-#define IR_CAPTURE_BUFFER   1024  // 红外接收缓冲大小
-#define IR_TIMEOUT          50    // 红外接收超时 (ms)
+#define IR_TX_PIN 4           // 红外发射（IRac_gpio4）//usb版16
+#define IR_RX_PIN 23           // 红外接收（TSOP34838）
+#define IR_CAPTURE_BUFFER 1024 // 红外接收缓冲大小
+#define IR_TIMEOUT 50          // 红外接收超时 (ms)
 
 // ---- AHT20 温湿度传感器（I2C）----
-#define I2C_SDA_PIN         21
-#define I2C_SCL_PIN         22
+#define I2C_SDA_PIN 21
+#define I2C_SCL_PIN 22
 
 // ---- Serial2（预留，默认引脚）----
-#define SERIAL2_RX_PIN      16
-#define SERIAL2_TX_PIN      17
+#define SERIAL2_RX_PIN 16
+#define SERIAL2_TX_PIN 17
 
 // ============================================================
 // ESP32 引脚占用总览（画 PCB 时对照）：
