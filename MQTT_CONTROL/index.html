@@ -69,6 +69,57 @@
 
     .page.active {
       display: block;
+      }
+
+    /* MQTT 首次打开/自动重连时的连接中页面 */
+    .connecting-view {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: var(--bg);
+    }
+
+    .connecting-view.show {
+      display: flex;
+    }
+
+    .connecting-card {
+      width: min(400px, 100%);
+      padding: 30px 22px;
+      text-align: center;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .connecting-spinner {
+      width: 54px;
+      height: 54px;
+      margin: 0 auto 20px;
+      border: 5px solid #dbeafe;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: connectingSpin 1s linear infinite;
+    }
+
+    @keyframes connectingSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    .connecting-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .connecting-hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
     }
 
     @keyframes pageFadeIn {
@@ -834,6 +885,14 @@
 
 <body>
 
+  <div id="connectingView" class="connecting-view" aria-live="polite">
+    <div class="connecting-card">
+      <div class="connecting-spinner"></div>
+      <div class="connecting-title">正在连接 MQTT…</div>
+      <div class="connecting-hint">正在恢复上次连接，请稍候<br>连接成功后将自动进入控制页面</div>
+    </div>
+  </div>
+
   <div class="page-container">
 
     <!-- ==================== 控制页 ==================== -->
@@ -1334,6 +1393,11 @@
       s.className = "pill " + cls;
     }
 
+    function setConnectingView(show) {
+      const view = $("connectingView");
+      if (view) view.classList.toggle("show", !!show);
+    }
+
     function setDevStatus(text, cls) {
       const s = $("devStatus");
       s.textContent = text;
@@ -1749,6 +1813,7 @@
       resetSessionView();
       if (client) { try { client.end(true); } catch (e) { } }
       setStatus("连接中…", "busy");
+      setConnectingView(true);
       log("连接 " + buildUrl());
       client = mqtt.connect(buildUrl(), {
         username: cfg.username || undefined,
@@ -1762,6 +1827,7 @@
         isConnected = true;
         updateControlsEnabled(true);
         setStatus("已连接", "on");
+        setConnectingView(false);
         lastDeviceHeartbeat = 0;
         brokerConnectTime = Date.now();
         setDevStatus("检测中…", "busy");
@@ -1785,6 +1851,7 @@
         isConnected = false;
         updateControlsEnabled(false);
         setStatus("未连接", "off");
+        setConnectingView(false);
         setDeviceOnline(false);
         log("连接已断开");
       });
@@ -1792,6 +1859,7 @@
         isConnected = false;
         updateControlsEnabled(false);
         setStatus("错误", "off");
+        setConnectingView(false);
         log("错误: " + ((e && e.message) || e));
       });
     }
@@ -1801,6 +1869,7 @@
       isConnected = false;
       updateControlsEnabled(false);
       setStatus("未连接", "off");
+      setConnectingView(false);
       setDeviceOnline(false);
       // 清除自动重连标志，下次不会自动连接，且配置会重新展开
       localStorage.removeItem('mqtt_auto_connect');

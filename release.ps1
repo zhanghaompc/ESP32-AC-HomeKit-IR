@@ -137,6 +137,8 @@ try {
     $add = @(
         'add',
         'src/DeviceConfig.h',
+        'MQTT_CONTROL/index.html',
+        'MQTT_CONTROL/mqtt.min.js',
         "firmware/$Environment.bin",
         "firmware/$manifestName",
         'src',
