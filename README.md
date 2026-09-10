@@ -230,13 +230,7 @@ ota=check
 
 推荐的 `esp32_wifi` 环境使用 `huge_app_ota.csv` 双应用分区。网页面板发送检查命令后，设备会读取与构建环境对应的版本清单；发现新版本时先等待用户确认，再异步下载并上报进度，写入完成后自动重启。
 
-发布工具会更新固件版本、编译产物和 OTA 清单：
-
-```powershell
-.\release.ps1 -Environment esp32_wifi -Version 1.5.32
-```
-
-发布脚本会提交并推送代码，使用前请先确认工作区内容和目标版本。详细流程见 [`OTA流程说明.md`](OTA流程说明.md)。
+固件升级使用仓库中的 OTA 清单和 `firmware/esp32_wifi.bin`。如需制作新版本，请先完成本地编译和设备验证，再由维护者更新固件版本号、二进制文件与 OTA 清单。详细的设备升级行为见 [`OTA流程说明.md`](OTA流程说明.md)。
 
 ## 项目结构
 
@@ -255,8 +249,8 @@ ota=check
 ├── MQTT_CONTROL/              MQTT 网页控制面板
 ├── firmware/                  已发布固件与 OTA 清单
 ├── docs/images/               项目图片
-├── platformio.ini             三种固件环境配置
-└── release.ps1                Windows 发布脚本
+├── platformio.ini             固件环境配置
+└── build_wifi.bat             Windows 本地构建脚本
 ```
 
 ## 技术实现
@@ -297,7 +291,7 @@ ota=check
 - 检查密码、隐藏 SSID 和路由器兼容性。
 - 必要时运行中长按 BOOT 3 秒清除 WiFi 凭据后重新配网。
 
-开发过程中的问题记录见 [`项目问题总结.md`](项目问题总结.md)，PlatformIO 使用提示见 [`PLATFORMIO_TIPS.md`](PLATFORMIO_TIPS.md)。
+PlatformIO 使用提示见 [`PLATFORMIO_TIPS.md`](PLATFORMIO_TIPS.md)。
 
 ## 效果展示
 
