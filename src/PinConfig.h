@@ -13,7 +13,7 @@
 #define LED_PIN 2 // WS2812B 数据脚
 
 // ---- 红外 ----
-#define IR_TX_PIN 4           // 红外发射（IRac_gpio4）//usb版16
+#define IR_TX_PIN 4            // 红外发射（IRac_gpio4）
 #define IR_RX_PIN 23           // 红外接收（TSOP34838）
 #define IR_CAPTURE_BUFFER 1024 // 红外接收缓冲大小
 #define IR_TIMEOUT 50          // 红外接收超时 (ms)
@@ -23,8 +23,8 @@
 #define I2C_SCL_PIN 22
 
 // ---- Serial2（预留，默认引脚）----
-#define SERIAL2_RX_PIN 16
-#define SERIAL2_TX_PIN 17
+// #define SERIAL2_RX_PIN 16
+// #define SERIAL2_TX_PIN 17
 
 // ============================================================
 // ESP32 引脚占用总览（画 PCB 时对照）：
